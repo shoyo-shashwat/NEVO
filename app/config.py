@@ -21,7 +21,7 @@ class Config:
 
     # AI providers
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-    GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen/qwen3-27b")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen/qwen3.6-27b")
 
     COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
 

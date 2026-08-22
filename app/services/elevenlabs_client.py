@@ -27,6 +27,7 @@ import os
 import logging
 
 from elevenlabs import ElevenLabs
+from elevenlabs.core.api_error import ApiError as ElevenLabsApiError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -117,7 +118,21 @@ def transcribe_audio(
     if language_code:
         kwargs["language_code"] = language_code
 
-    response = client.speech_to_text.convert(**kwargs)
+    try:
+        response = client.speech_to_text.convert(**kwargs)
+    except ElevenLabsApiError as e:
+        # Map API-level errors (empty file, corrupted audio, bad format) to
+        # TranscriptionError so the route can handle them gracefully without
+        # surfacing a 500.  The body may contain 'empty_file' or similar codes.
+        body = getattr(e, "body", {}) or {}
+        detail = body.get("detail", {}) if isinstance(body, dict) else {}
+        code = detail.get("code", "") if isinstance(detail, dict) else ""
+        msg = detail.get("message", str(e)) if isinstance(detail, dict) else str(e)
+        logger.warning("ElevenLabs API error (code=%s): %s", code, msg)
+        raise TranscriptionError(
+            f"Audio could not be transcribed ({code or 'api_error'}). "
+            "Please try recording again."
+        ) from e
 
     transcript = (response.text or "").strip()
 
