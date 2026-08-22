@@ -173,15 +173,23 @@ def report_flow():
     from app.services.cohere_client import embed_text
     from app.services.demand_matching import find_similar_clusters
 
-    embedding = embed_text(extracted.get("problem_summary") or raw_text)
-
-    match_result = None
-    if category_id and country_id:
-        match_result = find_similar_clusters(
-            report_text=extracted.get("problem_summary") or raw_text,
-            category_id=category_id,
-            country_id=country_id,
-        )
+    try:
+        embed_text(extracted.get("problem_summary") or raw_text)
+        match_result = None
+        if category_id and country_id:
+            match_result = find_similar_clusters(
+                report_text=extracted.get("problem_summary") or raw_text,
+                category_id=category_id,
+                country_id=country_id,
+            )
+    except Exception as embed_err:
+        # Embedding or pgvector query failed — rollback and continue without matching.
+        # Report is still saved as Unclustered; citizen can still see the demand result page.
+        logger.warning("Embed/match failed, continuing without cluster match: %s", embed_err)
+        db.session.rollback()
+        # Re-add the report after rollback
+        db.session.add(report)
+        match_result = None
 
     db.session.commit()
     return redirect(url_for("citizen.demand_result", report_id=report.id))
@@ -491,8 +499,12 @@ def _create_cluster_from_report(report: Report) -> DemandCluster:
     try:
         from app.services.demand_matching import store_cluster_embedding
         store_cluster_embedding(cluster.id, report.original_raw_input)
-    except Exception:
-        pass  # embedding failure doesn't block cluster creation for MVP
+    except Exception as e:
+        # Embedding failure doesn't block cluster creation — rollback the
+        # embedding write only, not the cluster itself.
+        db.session.rollback()
+        logger.warning("store_cluster_embedding failed (cluster still created): %s", e)
+        db.session.add(cluster)
 
     return cluster
 

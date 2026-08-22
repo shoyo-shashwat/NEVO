@@ -32,8 +32,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Cohere Embed v4 output dimension for embed-v4.0
-EMBED_DIMENSION = 1024
+# Cohere embed-v4.0 output dimension.
+# Verified empirically: embed-v4.0 returns 1536-dimensional vectors.
+# Note: cohere==5.15.0 does not expose an output_dimension parameter on embed();
+# the model always returns 1536 and this constant must match that exactly.
+# If a mismatch is detected at runtime, it is a hard failure — a silently wrong
+# dimension reaching pgvector would corrupt similarity search results.
+EMBED_DIMENSION = 1536
 
 # Input type for search/matching — "search_document" for stored cluster
 # embeddings, "search_query" for incoming report embeddings being compared.
@@ -95,9 +100,11 @@ def embed_text(text: str, input_type: str = _INPUT_TYPE_QUERY) -> list[float]:
     vector = embeddings[0]
 
     if len(vector) != EMBED_DIMENSION:
-        logger.warning(
-            "Cohere embedding dimension mismatch: expected %d, got %d",
-            EMBED_DIMENSION, len(vector),
+        # Hard fail — a silent mismatch must never reach pgvector.
+        raise ValueError(
+            f"Cohere embedding dimension mismatch: expected {EMBED_DIMENSION}, "
+            f"got {len(vector)}. The EMBED_DIMENSION constant must match "
+            f"what embed-v4.0 actually returns."
         )
 
     return vector
@@ -135,4 +142,13 @@ def embed_texts(texts: list[str], input_type: str = _INPUT_TYPE_DOCUMENT) -> lis
         embedding_types=["float"],
     )
 
-    return response.embeddings.float
+    vectors = response.embeddings.float
+
+    # Hard-fail on dimension mismatch — check first vector as representative.
+    if vectors and len(vectors[0]) != EMBED_DIMENSION:
+        raise ValueError(
+            f"Cohere batch embedding dimension mismatch: expected {EMBED_DIMENSION}, "
+            f"got {len(vectors[0])}."
+        )
+
+    return vectors

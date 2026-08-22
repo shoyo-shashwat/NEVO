@@ -76,11 +76,11 @@ class DemandCluster(db.Model):
     # column) in Alembic migrations — it will raise DuplicateTable.
     centroid = db.Column(Geography(geometry_type="POINT", srid=4326), nullable=True)
 
-    # Semantic embedding — pgvector VECTOR(1024) (schema v2, Step 4)
-    # Cohere Embed v4 dimension.  demand_matching.py queries this column
-    # using <=> (cosine distance) operator.
+    # Semantic embedding — pgvector VECTOR(1536) (schema v3, corrected from v2)
+    # Cohere embed-v4.0 returns 1536-dimensional vectors (verified empirically).
+    # demand_matching.py queries this column using <=> (cosine distance) operator.
     # Stored with input_type="search_document" (see cohere_client.py).
-    embedding = db.Column(Vector(1024), nullable=True)
+    embedding = db.Column(Vector(1536), nullable=True)
 
     # Demand signals
     affected_localities = db.Column(db.JSON, nullable=True, default=list)
