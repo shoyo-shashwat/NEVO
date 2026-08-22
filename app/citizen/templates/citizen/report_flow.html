@@ -5,7 +5,6 @@
 <div class="report-flow">
 
   {% if clarification %}
-    {# AI asked a follow-up — show it above the same form so citizen can answer inline #}
     <div class="report-flow__clarification">
       <p class="report-flow__ai-q">{{ clarification }}</p>
     </div>
@@ -17,9 +16,9 @@
   <form method="POST" action="{{ url_for('citizen.report_flow') }}"
         enctype="multipart/form-data" id="report-form">
 
-    {# Hidden channel field — JS updates it when mic is used #}
     <input type="hidden" name="channel" id="channel-input" value="text">
 
+    {# Main input — voice fills this via Web Speech API, text typed directly #}
     <textarea
       name="text_input"
       id="text-input"
@@ -29,13 +28,27 @@
       autofocus
     >{{ partial_text or '' }}</textarea>
 
-    {# Voice input — single mic button, no extra UI #}
+    {# Voice button — uses Web Speech API to type into the textarea live #}
     <div class="report-flow__voice">
       <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
-        🎙 Record
+        🎙 Speak
       </button>
       <span id="mic-status" class="report-flow__mic-status"></span>
-      <input type="file" name="audio" id="audio-input" accept="audio/*" style="display:none">
+    </div>
+
+    {# Location hint — optional, gives AI a fallback if not mentioned in text #}
+    <div class="report-flow__location">
+      <label for="location-hint" class="report-flow__location-label">
+        Which area or neighbourhood? <span class="report-flow__optional">(optional)</span>
+      </label>
+      <input
+        type="text"
+        name="location_hint"
+        id="location-hint"
+        class="report-flow__location-input"
+        placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
+        value="{{ location_hint or '' }}"
+      >
     </div>
 
     <button type="submit" class="btn btn--primary">Submit</button>
@@ -46,45 +59,70 @@
 
 {% block scripts %}
 <script>
-// Minimal voice recording — MediaRecorder → WebM blob → hidden file input.
-// No framework, no library.
+// Web Speech API — types words directly into the textarea as the citizen speaks.
+// No audio file upload needed for the common case.
+// Falls back gracefully if the browser doesn't support it.
 (function () {
-  const micBtn = document.getElementById('mic-btn');
-  const micStatus = document.getElementById('mic-status');
-  const channelInput = document.getElementById('channel-input');
-  const audioInput = document.getElementById('audio-input');
-  const form = document.getElementById('report-form');
+  var micBtn = document.getElementById('mic-btn');
+  var micStatus = document.getElementById('mic-status');
+  var textInput = document.getElementById('text-input');
 
-  let recorder, chunks = [];
+  // Check browser support
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    micBtn.style.display = 'none';
+    return;
+  }
 
-  micBtn.addEventListener('click', async function () {
-    if (recorder && recorder.state === 'recording') {
-      recorder.stop();
-      micBtn.textContent = '🎙 Record';
-      micStatus.textContent = 'Processing…';
-      return;
+  var recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';  // default; citizen's browser locale will often override
+
+  var isRecording = false;
+  var baseText = '';   // text already in box before this recording session
+
+  recognition.onresult = function (event) {
+    var interim = '';
+    var final = '';
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript + ' ';
+      } else {
+        interim += transcript;
+      }
     }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recorder = new MediaRecorder(stream);
-      chunks = [];
-      recorder.ondataavailable = e => chunks.push(e.data);
-      recorder.onstop = function () {
-        const blob = new Blob(chunks, { type: 'audio/webm' });
-        // Inject blob as a File into the hidden input so the form POST includes it
-        const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        audioInput.files = dt.files;
-        channelInput.value = 'voice';
-        micStatus.textContent = 'Recording ready — click Submit.';
-        stream.getTracks().forEach(t => t.stop());
-      };
-      recorder.start();
+    if (final) baseText += final;
+    // Show confirmed words + interim in textarea
+    textInput.value = baseText + interim;
+  };
+
+  recognition.onerror = function (e) {
+    micStatus.textContent = 'Microphone error: ' + e.error;
+    isRecording = false;
+    micBtn.textContent = '🎙 Speak';
+  };
+
+  recognition.onend = function () {
+    if (isRecording) {
+      // Auto-restart to keep recording (continuous mode sometimes stops on silence)
+      recognition.start();
+    }
+  };
+
+  micBtn.addEventListener('click', function () {
+    if (!isRecording) {
+      baseText = textInput.value;   // preserve any text already typed
+      recognition.start();
+      isRecording = true;
       micBtn.textContent = '⏹ Stop';
-      micStatus.textContent = 'Recording…';
-    } catch (err) {
-      micStatus.textContent = 'Microphone not available.';
+      micStatus.textContent = 'Listening…';
+    } else {
+      recognition.stop();
+      isRecording = false;
+      micBtn.textContent = '🎙 Speak';
+      micStatus.textContent = 'Done — review and submit.';
     }
   });
 }());

@@ -98,6 +98,14 @@ body { font-family: system-ui, sans-serif; color: var(--color-text);
 .report-flow__voice    { display: flex; align-items: center; gap: 0.75rem;
                          margin-bottom: 1rem; }
 .report-flow__mic-status { font-size: 0.85rem; color: var(--color-muted); }
+.report-flow__location { margin-bottom: 1rem; }
+.report-flow__location-label { display: block; font-size: 0.875rem;
+                                font-weight: 600; margin-bottom: 0.35rem; }
+.report-flow__optional { font-weight: 400; color: var(--color-muted); }
+.report-flow__location-input { width: 100%; padding: 0.6rem 0.75rem;
+                                border: 1px solid var(--color-border);
+                                border-radius: var(--radius); font-size: 0.95rem;
+                                font-family: inherit; }
 
 /* Timeline */
 .my-timeline          { max-width: 640px; }

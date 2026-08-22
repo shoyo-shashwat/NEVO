@@ -55,6 +55,7 @@ def report_flow():
     # --- Determine channel and get raw text ---
     channel = request.form.get("channel", "text")
     raw_text = ""
+    location_hint = (request.form.get("location_hint") or "").strip()
 
     if channel == "voice":
         audio = request.files.get("audio")
@@ -75,8 +76,14 @@ def report_flow():
             return render_template("citizen/report_flow.html")
 
     # --- AI extraction ---
+    # If citizen provided a location hint, append it to the text so Groq
+    # can extract it as the location field. Keeps the pipeline unchanged.
+    extraction_text = raw_text
+    if location_hint:
+        extraction_text = raw_text + f"\n[Location hint: {location_hint}]"
+
     from app.services.groq_client import extract_report_fields, ask_clarification
-    extracted = extract_report_fields(raw_text)
+    extracted = extract_report_fields(extraction_text)
     meta = extracted.get("meta", {})
 
     # Resolve category_id from category code
@@ -140,6 +147,7 @@ def report_flow():
             clarification=clarification,
             report_id=report.id,
             partial_text=raw_text,
+            location_hint=location_hint,
         )
 
     # --- Report is complete: embed + match ---
