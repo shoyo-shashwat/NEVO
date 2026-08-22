@@ -51,7 +51,7 @@
     <h2>Population</h2>
     <ul class="evidence-list">
       {% if gap.population_affected %}
-        <li>Estimated affected: {{ gap.population_affected | int | format_number }}</li>
+        <li>Estimated affected: {{ gap.population_affected | int }}</li>
       {% else %}
         <li>Population data unavailable</li>
       {% endif %}
