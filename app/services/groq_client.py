@@ -117,15 +117,19 @@ def extract_report_fields(raw_text: str) -> dict:
 
     raw_json = response.choices[0].message.content.strip()
 
-    # qwen3.6-27b (and other reasoning models) may emit a <think>...</think>
-    # block before the JSON output.  Strip it before parsing.
+    # qwen3.6-27b emits a <think>...</think> reasoning block before the JSON.
+    # Strip it: find the closing </think> tag first, then take everything after it.
+    # Fall back to searching for the first '{' if no closing tag is present.
     if "<think>" in raw_json:
-        # Find the JSON object — everything from the first '{' onward
+        think_end = raw_json.find("</think>")
+        if think_end != -1:
+            raw_json = raw_json[think_end + len("</think>"):].strip()
+        # After stripping the think block, find the JSON object
         json_start = raw_json.find("{")
         if json_start != -1:
             raw_json = raw_json[json_start:]
         else:
-            logger.error("Groq response had <think> block but no JSON object found: %s", raw_json[:200])
+            logger.error("No JSON found after stripping <think> block. Full response: %s", raw_json[:500])
             raise json.JSONDecodeError("No JSON object found after <think> block", raw_json, 0)
 
     try:
