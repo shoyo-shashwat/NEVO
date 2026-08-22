@@ -117,10 +117,21 @@ def extract_report_fields(raw_text: str) -> dict:
 
     raw_json = response.choices[0].message.content.strip()
 
+    # qwen3.6-27b (and other reasoning models) may emit a <think>...</think>
+    # block before the JSON output.  Strip it before parsing.
+    if "<think>" in raw_json:
+        # Find the JSON object — everything from the first '{' onward
+        json_start = raw_json.find("{")
+        if json_start != -1:
+            raw_json = raw_json[json_start:]
+        else:
+            logger.error("Groq response had <think> block but no JSON object found: %s", raw_json[:200])
+            raise json.JSONDecodeError("No JSON object found after <think> block", raw_json, 0)
+
     try:
         fields = json.loads(raw_json)
     except json.JSONDecodeError:
-        logger.error("Groq extraction returned non-JSON: %s", raw_json)
+        logger.error("Groq extraction returned non-JSON: %s", raw_json[:300])
         raise
 
     # Compute completeness gate (Progress Log §13.1)
