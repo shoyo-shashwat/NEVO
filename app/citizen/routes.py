@@ -14,6 +14,9 @@ from flask import (
 from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import func
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.citizen import citizen_bp
 from app.extensions import db
@@ -83,7 +86,19 @@ def report_flow():
         extraction_text = raw_text + f"\n[Location hint: {location_hint}]"
 
     from app.services.groq_client import extract_report_fields, ask_clarification
-    extracted = extract_report_fields(extraction_text)
+    try:
+        extracted = extract_report_fields(extraction_text)
+    except Exception as e:
+        # Groq API error, truncated response, or JSON parse failure.
+        # Never 500 during a live demo — fall back to Draft with a retry message.
+        logger.warning("Groq extraction failed (%s), falling back to Draft: %s",
+                       type(e).__name__, str(e)[:120])
+        extracted = {
+            "category": None, "location": None, "severity": None,
+            "duration": None, "affected_group": None,
+            "problem_summary": None, "language_detected": None,
+            "meta": {"complete": False, "missing_fields": ["category", "location"]},
+        }
     meta = extracted.get("meta", {})
 
     # Resolve category_id from category code
@@ -139,8 +154,12 @@ def report_flow():
     ))
 
     if status == "Draft":
-        # Not enough info yet — ask one clarification question
-        clarification = ask_clarification(raw_text, meta.get("missing_fields", []))
+        # Not enough info yet — ask one clarification question.
+        # If extraction itself failed, show a generic retry prompt.
+        if not extracted.get("meta", {}).get("missing_fields"):
+            clarification = "Could you describe the problem in a bit more detail?"
+        else:
+            clarification = ask_clarification(raw_text, extracted["meta"]["missing_fields"])
         db.session.commit()
         return render_template(
             "citizen/report_flow.html",

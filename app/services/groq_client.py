@@ -52,6 +52,8 @@ def _model() -> str:
 
 _EXTRACT_SYSTEM = """You are a structured-data extraction assistant for a citizen development-reporting platform.
 
+Keep your reasoning brief (under 50 words), then output ONLY the JSON object.
+
 Given a citizen's natural-language description of a local development problem, extract the following fields as a JSON object:
 
 {
@@ -66,7 +68,7 @@ Given a citizen's natural-language description of a local development problem, e
 }
 
 Rules:
-- Return ONLY the JSON object — no markdown fences, no explanation.
+- Return ONLY the JSON object — no markdown fences, no explanation after the JSON.
 - If a field cannot be reliably inferred, set it to null.
 - Do not invent location names.
 - category must be one of the fixed values above, or null.
@@ -147,7 +149,7 @@ def extract_report_fields(raw_text: str) -> dict:
             {"role": "user", "content": raw_text},
         ],
         temperature=0.0,   # deterministic extraction
-        max_tokens=512,
+        max_tokens=1536,   # reasoning models need headroom; 512 was too tight
     )
 
     raw_response = response.choices[0].message.content or ""
