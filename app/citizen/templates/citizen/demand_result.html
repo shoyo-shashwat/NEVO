@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Your report — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="demand-result">
+
+  {% if match_tier == "auto_suggest" and clusters %}
+    {# High confidence — one clear "join" action #}
+    {% set top = clusters[0] %}
+    <h1>A similar community issue already exists</h1>
+    <div class="cluster-card cluster-card--highlight">
+      <p class="cluster-card__category">{{ top.cluster.category_id }}</p>
+      <p class="cluster-card__stats">
+        {{ top.unique_contributors }} people · {{ top.cluster.affected_localities | join(', ') }}
+      </p>
+      <p class="cluster-card__match">{{ top.similarity }}% match</p>
+
+      <form method="POST">
+        <input type="hidden" name="cluster_id" value="{{ top.cluster.id }}">
+        <button name="action" value="join" class="btn btn--primary">Join this issue</button>
+        <button name="action" value="start_new" class="btn btn--secondary">Not the same — start new</button>
+      </form>
+    </div>
+
+  {% elif match_tier == "show_candidates" and clusters %}
+    {# Medium confidence — list up to 3, citizen picks #}
+    <h1>Similar issues found nearby</h1>
+    <p>Which of these matches what you reported?</p>
+
+    {% for item in clusters %}
+      <div class="cluster-card">
+        <p class="cluster-card__category">{{ item.cluster.category_id }}</p>
+        <p class="cluster-card__stats">
+          {{ item.unique_contributors }} people · {{ item.cluster.affected_localities | join(', ') }}
+        </p>
+        <p class="cluster-card__match">{{ item.similarity }}% match</p>
+        <form method="POST" style="display:inline">
+          <input type="hidden" name="cluster_id" value="{{ item.cluster.id }}">
+          <button name="action" value="join" class="btn btn--primary btn--small">This one</button>
+        </form>
+      </div>
+    {% endfor %}
+
+    <form method="POST">
+      <button name="action" value="start_new" class="btn btn--secondary">None of these — start new</button>
+    </form>
+
+  {% else %}
+    {# No match — explicit start new only, no silent auto-create #}
+    <h1>No existing issue found</h1>
+    <p>Your report will start a new community issue.</p>
+    <form method="POST">
+      <button name="action" value="start_new" class="btn btn--primary">Start community issue</button>
+    </form>
+  {% endif %}
+
+</div>
+{% endblock %}

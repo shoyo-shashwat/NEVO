@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Community Demand Map — BRICS People First{% endblock %}
+
+{% block head %}
+  {# Leaflet — lightweight, no framework, CDN #}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+
+{% block content %}
+<div class="demand-map-page">
+  <h1>Community demand map</h1>
+
+  {# Category filter #}
+  <div class="filter-bar">
+    <button class="filter-btn filter-btn--active" data-cat="">All</button>
+    {% for cat in categories %}
+      <button class="filter-btn" data-cat="{{ cat.id }}">{{ cat.name }}</button>
+    {% endfor %}
+  </div>
+
+  <div id="map" style="height: 500px; width: 100%;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  var map = L.map('map').setView([20, 0], 2);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  var markers = L.layerGroup().addTo(map);
+  var activeCategory = '';
+
+  function loadData() {
+    var url = '/citizen/map/data';
+    if (activeCategory) url += '?category=' + activeCategory;
+
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (geojson) {
+        markers.clearLayers();
+        L.geoJSON(geojson, {
+          pointToLayer: function (feature, latlng) {
+            return L.circleMarker(latlng, {
+              radius: 10,
+              fillColor: '#e05c2b',
+              color: '#fff',
+              weight: 1,
+              fillOpacity: 0.85,
+            });
+          },
+          onEachFeature: function (feature, layer) {
+            var p = feature.properties;
+            layer.bindPopup(
+              '<strong>' + p.category + '</strong><br>' +
+              p.localities.join(', ') + '<br>' +
+              '<em>' + p.status + '</em>'
+            );
+          },
+        }).addTo(markers);
+      });
+  }
+
+  // Category filter buttons
+  document.querySelectorAll('.filter-btn[data-cat]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.filter-btn[data-cat]').forEach(function (b) {
+        b.classList.remove('filter-btn--active');
+      });
+      btn.classList.add('filter-btn--active');
+      activeCategory = btn.dataset.cat;
+      loadData();
+    });
+  });
+
+  loadData();
+}());
+</script>
+{% endblock %}

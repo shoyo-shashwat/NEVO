@@ -1,0 +1,25 @@
+# requirements.txt
+# Pinned to exact versions for reproducibility.
+# Update intentionally — never let pip float these.
+
+# Web framework
+Flask==3.1.1
+Werkzeug==3.1.3
+gunicorn==23.0.0             # Render production server
+
+# Database & ORM
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.41
+Flask-Migrate==4.1.0
+alembic==1.16.1
+psycopg2-binary==2.9.10        # PostgreSQL driver (binary for Render compatibility)
+GeoAlchemy2==0.17.1            # PostGIS geometry columns
+pgvector==0.4.1                # pgvector VECTOR column type for SQLAlchemy
+
+# AI providers
+groq==0.29.0                   # Groq Python SDK
+cohere==5.15.0                 # Cohere Embed v4
+elevenlabs==2.3.0              # ElevenLabs Scribe v2
+
+# Utilities
+python-dotenv==1.1.0           # loads .env in development

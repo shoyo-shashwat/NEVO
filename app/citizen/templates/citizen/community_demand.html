@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Community Issues — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="community-demand">
+  <h1>Community issues</h1>
+
+  {# Category filter — single row of buttons, no elaborate filter panel #}
+  <div class="filter-bar">
+    <a href="{{ url_for('citizen.community') }}"
+       class="filter-btn {% if not active_category %}filter-btn--active{% endif %}">All</a>
+    {% for cat in categories %}
+      <a href="{{ url_for('citizen.community', category=cat.id) }}"
+         class="filter-btn {% if active_category == cat.id %}filter-btn--active{% endif %}">
+        {{ cat.name }}
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if not cluster_data %}
+    <p class="empty-state">No active community issues yet. <a href="{{ url_for('citizen.report_flow') }}">Be the first to report one.</a></p>
+  {% endif %}
+
+  {% for item in cluster_data %}
+    {% set c = item.cluster %}
+    <div class="cluster-card">
+      <div class="cluster-card__header">
+        <span class="cluster-card__category">{{ item.category_name }}</span>
+        <span class="cluster-card__status cluster-card__status--{{ c.active_status | lower }}">
+          {{ c.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+        </span>
+      </div>
+
+      <p class="cluster-card__localities">{{ c.affected_localities | join(' · ') }}</p>
+
+      <div class="cluster-card__stats">
+        <span>{{ item.unique_contributors }} people</span>
+        <span>{{ item.total_reports }} reports</span>
+        {% if c.trend == 'increasing' %}<span class="trend--up">↑ Increasing</span>{% endif %}
+      </div>
+
+      {# Community sentiment — shown alongside official status, never merged #}
+      {% if item.sentiment.total > 0 %}
+        <p class="cluster-card__sentiment">
+          Community says: <strong>{{ item.sentiment.still_affected_pct }}% still affected</strong>
+        </p>
+      {% endif %}
+
+      {# Verification actions — logged-in citizens only #}
+      {% if session.get('role') == 'citizen' %}
+        <form method="POST" action="{{ url_for('citizen.verify_cluster', cluster_id=c.id) }}" class="verif-form">
+          <span class="verif-form__label">Still happening?</span>
+          {% for state, label in [('StillHappening','Yes'), ('Improved','Improved'), ('Resolved','Resolved')] %}
+            <button name="state" value="{{ state }}" class="btn btn--tiny">{{ label }}</button>
+          {% endfor %}
+        </form>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

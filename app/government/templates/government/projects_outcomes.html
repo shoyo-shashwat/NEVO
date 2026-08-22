@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Projects & Outcomes — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="projects-outcomes">
+  <h1>Projects &amp; outcomes</h1>
+
+  {% if not project_data %}
+    <p class="empty-state">No projects linked yet.</p>
+  {% endif %}
+
+  {% for item in project_data %}
+    {% set p = item.project %}
+    {% set outcome = item.outcome %}
+    {% set cluster = item.cluster %}
+
+    <div class="project-card">
+      <div class="project-card__header">
+        <span class="project-card__name">{{ p.name }}</span>
+        <span class="project-card__status project-card__status--{{ p.status | lower }}">
+          {{ p.status }}
+        </span>
+      </div>
+
+      {% if cluster %}
+        <p class="project-card__demand">
+          Linked demand: {{ cluster.affected_localities | join(', ') }}
+          · <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}">View</a>
+        </p>
+      {% endif %}
+
+      {% if p.milestones %}
+        <ol class="project-milestones">
+          {% for m in p.milestones %}
+            <li class="project-milestone project-milestone--{{ m.status | default('pending') }}">
+              {{ m.label }} {% if m.date %}({{ m.date }}){% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% endif %}
+
+      {# Outcome — never invent numbers, always show AwaitingOutcomeData honestly #}
+      <div class="project-outcome">
+        {% if outcome %}
+          {% if outcome.status == 'Verified' and outcome.after_indicator %}
+            <p class="outcome--verified">Outcome: {{ outcome.after_indicator }}</p>
+            {% if outcome.impact_percent %}
+              <p class="outcome__impact">{{ outcome.impact_percent }}% improvement</p>
+            {% endif %}
+          {% else %}
+            <p class="outcome--waiting">Awaiting outcome data</p>
+          {% endif %}
+        {% else %}
+          <p class="outcome--waiting">Awaiting outcome data</p>
+        {% endif %}
+      </div>
+    </div>
+
+  {% endfor %}
+</div>
+{% endblock %}

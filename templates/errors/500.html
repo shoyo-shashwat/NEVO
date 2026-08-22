@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong — BRICS People First{% endblock %}
+{% block content %}
+<div style="text-align:center; padding:3rem 1rem;">
+  <h1>Something went wrong</h1>
+  <p style="color:#6b7280; margin:1rem 0;">An unexpected error occurred. The team has been notified.</p>
+  <a href="{{ url_for('role_select') }}" class="btn btn--primary">Go home</a>
+</div>
+{% endblock %}

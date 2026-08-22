@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="gov-dashboard">
+  <h1>What needs attention</h1>
+  <p class="dashboard__country">{{ country_code }}</p>
+
+  {# --- Top Priorities (increasing demand) --- #}
+  {% if top_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title">Top priorities</h2>
+    {% for card in top_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- Decisions Awaiting Review --- #}
+  {% if pending_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title">Awaiting your decision</h2>
+    {% for card in pending_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- Other Active Issues --- #}
+  {% if other_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title">Other active issues</h2>
+    {% for card in other_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if not top_cards and not pending_cards and not other_cards %}
+    <p class="empty-state">No active demand signals for your area yet.</p>
+  {% endif %}
+
+</div>
+{% endblock %}

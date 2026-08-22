@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BRICS People First{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<header class="site-header">
+  <a href="{{ url_for('citizen.home') }}" class="site-logo">BRICS People First</a>
+  <nav class="site-nav">
+    {% if session.get('role') %}
+      <span class="nav-actor">{{ session.get('actor_name', '') }}</span>
+      <a href="{{ url_for('role_select') }}" class="nav-link">Switch role</a>
+    {% else %}
+      <a href="{{ url_for('role_select') }}" class="nav-link">Select role</a>
+    {% endif %}
+  </nav>
+</header>
+
+<main class="site-main">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash flash--{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <small>Demo data — for illustration purposes only</small>
+</footer>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

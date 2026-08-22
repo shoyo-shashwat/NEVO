@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Decision — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="decision-workspace">
+  <h1>Record decision</h1>
+  <p class="decision-workspace__cluster">
+    {{ cluster.affected_localities | join(' · ') }}
+    {% if cluster.category_id %} · {{ cluster.category_id }}{% endif %}
+  </p>
+
+  {% if existing_decision %}
+    <div class="decision-workspace__existing">
+      <strong>Previous decision:</strong>
+      {{ existing_decision.decision_type }} — {{ existing_decision.reason }}
+    </div>
+  {% endif %}
+
+  <form method="POST">
+
+    {# Action set differs by role and current workflow state #}
+    <fieldset class="decision-options">
+      <legend>Your decision</legend>
+
+      {% if role == 'mp' %}
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Prioritize" required>
+          Prioritise / Recommend action
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Defer">
+          Defer
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Deprioritize">
+          Deprioritise / Reject
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="NeedsValidation">
+          Request validation
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Redirected">
+          Redirect to another authority
+        </label>
+
+      {% elif role == 'planning_officer' %}
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="NeedsValidation" required>
+          Validate evidence
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Prioritize">
+          Propose for action
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Redirected">
+          Redirect
+        </label>
+      {% endif %}
+    </fieldset>
+
+    {#
+      Reason — human-authored only.
+      This textarea is the ONLY permitted source for GovernmentDecision.reason.
+      No AI-generated text may pre-populate or override this field.
+    #}
+    <div class="decision-reason">
+      <label for="reason">
+        Reason <span class="required">*</span>
+        <span class="decision-reason__note">(your words — required)</span>
+      </label>
+      <textarea
+        id="reason"
+        name="reason"
+        rows="4"
+        required
+        placeholder="Explain the reason for this decision…"
+      ></textarea>
+    </div>
+
+    {# Link to an existing project (optional) #}
+    {% if projects %}
+    <div class="decision-link-project">
+      <label for="linked_project_id">Link to existing project (optional)</label>
+      <select name="linked_project_id" id="linked_project_id">
+        <option value="">— none —</option>
+        {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }} ({{ p.status }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="decision-workspace__actions">
+      <button type="submit" class="btn btn--primary">Record decision</button>
+      <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}"
+         class="btn btn--secondary">Cancel</a>
+    </div>
+
+  </form>
+</div>
+{% endblock %}

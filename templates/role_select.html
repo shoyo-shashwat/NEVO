@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Select Role — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="role-select">
+  <h1>Who are you today?</h1>
+  <p class="role-select__hint">Choose a demo account to continue.</p>
+
+  <form method="POST" action="{{ url_for('role_select') }}">
+    <div class="role-select__groups">
+      {% set countries = [('IN', '🇮🇳 India'), ('BR', '🇧🇷 Brazil'), ('RU', '🇷🇺 Russia')] %}
+      {% for code, label in countries %}
+        <div class="role-group">
+          <h2 class="role-group__country">{{ label }}</h2>
+          {% for actor in actors %}
+            {% if actor.country_code == code %}
+              <label class="role-option {% if session.get('actor_id') == actor.id %}role-option--active{% endif %}">
+                <input type="radio" name="actor_id" value="{{ actor.id }}"
+                  {% if session.get('actor_id') == actor.id %}checked{% endif %}>
+                <span class="role-option__name">{{ actor.name }}</span>
+                <span class="role-option__role">{{ actor.role | replace('_', ' ') | title }}</span>
+              </label>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <button type="submit" class="btn btn--primary">Continue</button>
+  </form>
+</div>
+{% endblock %}

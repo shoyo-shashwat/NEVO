@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Home — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="home">
+  <h1 class="home__heading">Tell us what your community needs</h1>
+  <p class="home__sub">Your voice shapes local development priorities.</p>
+
+  <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary btn--large">
+    Report a problem
+  </a>
+
+  <div class="home__links">
+    <a href="{{ url_for('citizen.community') }}">See community issues</a>
+    <a href="{{ url_for('citizen.demand_map') }}">View map</a>
+    {% if session.get('role') == 'citizen' %}
+      <a href="{{ url_for('citizen.my_timeline') }}">My timeline</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

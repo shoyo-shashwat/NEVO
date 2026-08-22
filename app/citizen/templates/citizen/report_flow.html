@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Report a problem — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="report-flow">
+
+  {% if clarification %}
+    {# AI asked a follow-up — show it above the same form so citizen can answer inline #}
+    <div class="report-flow__clarification">
+      <p class="report-flow__ai-q">{{ clarification }}</p>
+    </div>
+  {% else %}
+    <h1 class="report-flow__heading">What's the problem?</h1>
+    <p class="report-flow__hint">Describe it in your own words — voice or text.</p>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('citizen.report_flow') }}"
+        enctype="multipart/form-data" id="report-form">
+
+    {# Hidden channel field — JS updates it when mic is used #}
+    <input type="hidden" name="channel" id="channel-input" value="text">
+
+    <textarea
+      name="text_input"
+      id="text-input"
+      class="report-flow__textarea"
+      rows="4"
+      placeholder="e.g. There is no clean water in our area for the past two months…"
+      autofocus
+    >{{ partial_text or '' }}</textarea>
+
+    {# Voice input — single mic button, no extra UI #}
+    <div class="report-flow__voice">
+      <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
+        🎙 Record
+      </button>
+      <span id="mic-status" class="report-flow__mic-status"></span>
+      <input type="file" name="audio" id="audio-input" accept="audio/*" style="display:none">
+    </div>
+
+    <button type="submit" class="btn btn--primary">Submit</button>
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Minimal voice recording — MediaRecorder → WebM blob → hidden file input.
+// No framework, no library.
+(function () {
+  const micBtn = document.getElementById('mic-btn');
+  const micStatus = document.getElementById('mic-status');
+  const channelInput = document.getElementById('channel-input');
+  const audioInput = document.getElementById('audio-input');
+  const form = document.getElementById('report-form');
+
+  let recorder, chunks = [];
+
+  micBtn.addEventListener('click', async function () {
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop();
+      micBtn.textContent = '🎙 Record';
+      micStatus.textContent = 'Processing…';
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream);
+      chunks = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = function () {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        // Inject blob as a File into the hidden input so the form POST includes it
+        const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        audioInput.files = dt.files;
+        channelInput.value = 'voice';
+        micStatus.textContent = 'Recording ready — click Submit.';
+        stream.getTracks().forEach(t => t.stop());
+      };
+      recorder.start();
+      micBtn.textContent = '⏹ Stop';
+      micStatus.textContent = 'Recording…';
+    } catch (err) {
+      micStatus.textContent = 'Microphone not available.';
+    }
+  });
+}());
+</script>
+{% endblock %}

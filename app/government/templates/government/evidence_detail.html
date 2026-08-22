@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Evidence — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="evidence-detail">
+
+  {# --- Priority headline --- #}
+  <div class="evidence-header evidence-header--{{ priority.priority | lower }}">
+    <span class="evidence-header__priority">{{ priority.priority }}</span>
+    <span class="evidence-header__category">{{ category.name if category else '' }}</span>
+  </div>
+
+  {# --- Demand --- #}
+  <section class="evidence-section">
+    <h2>Demand</h2>
+    <ul class="evidence-list">
+      <li>{{ cluster.unique_contributors }} unique contributors</li>
+      <li>{{ cluster.total_reports }} reports</li>
+      <li>{{ cluster.affected_localities | join(' · ') }}</li>
+      {% if cluster.trend == 'increasing' %}<li>↑ Increasing</li>{% endif %}
+    </ul>
+
+    {# Community sentiment — shown alongside official status, never merged #}
+    {% set sentiment = cluster.community_sentiment %}
+    {% if sentiment.total > 0 %}
+      <p class="evidence-sentiment">
+        Community says: <strong>{{ sentiment.still_affected_pct }}% still affected</strong>
+        <span class="evidence-sentiment__official">
+          Official status: {{ cluster.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+        </span>
+      </p>
+    {% endif %}
+  </section>
+
+  {# --- Infrastructure --- #}
+  <section class="evidence-section">
+    <h2>Infrastructure</h2>
+    <ul class="evidence-list">
+      <li>Coverage: <strong>{{ gap.official_coverage or 'Unknown' }}</strong></li>
+      {% if gap.nearest_facility_km %}
+        <li>Nearest facility: {{ gap.nearest_facility_km }} km</li>
+      {% endif %}
+      <li>Data: {{ gap.infra_data_freshness or 'unknown' }}
+        {% if gap.infra_source %} — {{ gap.infra_source }}{% endif %}
+      </li>
+    </ul>
+  </section>
+
+  {# --- Demographics --- #}
+  <section class="evidence-section">
+    <h2>Population</h2>
+    <ul class="evidence-list">
+      {% if gap.population_affected %}
+        <li>Estimated affected: {{ gap.population_affected | int | format_number }}</li>
+      {% else %}
+        <li>Population data unavailable</li>
+      {% endif %}
+    </ul>
+  </section>
+
+  {# --- Investment / Intervention --- #}
+  <section class="evidence-section">
+    <h2>Existing investment</h2>
+    <p class="evidence-alignment evidence-alignment--{{ alignment.state | lower | replace('_', '-') }}">
+      {{ alignment.state | replace('_', ' ') | title }}
+    </p>
+    <p class="evidence-reasoning">{{ alignment.reasoning }}</p>
+  </section>
+
+  {# --- Evidence confidence + WHY FLAGGED --- #}
+  <section class="evidence-section">
+    <h2>Evidence confidence</h2>
+    <p class="evidence-confidence evidence-confidence--{{ confidence.confidence | lower }}">
+      {{ confidence.confidence }}
+    </p>
+    <ul class="evidence-list">
+      {% if dominant_severity %}
+        <li>Severity: <strong>{{ dominant_severity | title }}</strong></li>
+      {% endif %}
+      {% for reason in confidence.reasons %}
+        <li>{{ reason }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {# --- Why flagged --- #}
+  <section class="evidence-section">
+    <h2>Why flagged</h2>
+    <ul class="evidence-list">
+      {% for reason in priority.reasons %}
+        <li>{{ reason }}</li>
+      {% endfor %}
+    </ul>
+    <p class="evidence-next-step">{{ priority.recommended_next_step }}</p>
+  </section>
+
+  {# --- Action block --- #}
+  <div class="evidence-actions">
+    {% if existing_decision %}
+      <div class="evidence-decision-recorded">
+        <strong>Decision recorded:</strong>
+        {{ existing_decision.decision_type }} — {{ existing_decision.reason }}
+      </div>
+    {% endif %}
+
+    {# Before review: just Review + Request Validation #}
+    {% if cluster.review_status == 'NotReviewed' %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--primary">Review &amp; decide</a>
+    {% elif cluster.review_status in ('UnderReview', 'PendingValidation') %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--primary">Record decision</a>
+    {% else %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--secondary">Update decision</a>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
