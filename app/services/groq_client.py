@@ -19,6 +19,7 @@
 import json
 import os
 import logging
+import re
 
 from groq import Groq
 from dotenv import load_dotenv
@@ -115,22 +116,20 @@ def extract_report_fields(raw_text: str) -> dict:
         max_tokens=512,
     )
 
-    raw_json = response.choices[0].message.content.strip()
+    raw_response = response.choices[0].message.content or ""
 
-    # qwen3.6-27b emits a <think>...</think> reasoning block before the JSON.
-    # Strip it: find the closing </think> tag first, then take everything after it.
-    # Fall back to searching for the first '{' if no closing tag is present.
-    if "<think>" in raw_json:
-        think_end = raw_json.find("</think>")
-        if think_end != -1:
-            raw_json = raw_json[think_end + len("</think>"):].strip()
-        # After stripping the think block, find the JSON object
-        json_start = raw_json.find("{")
-        if json_start != -1:
-            raw_json = raw_json[json_start:]
-        else:
-            logger.error("No JSON found after stripping <think> block. Full response: %s", raw_json[:500])
-            raise json.JSONDecodeError("No JSON object found after <think> block", raw_json, 0)
+    # The model (qwen3.6-27b) is a reasoning model that may:
+    #   1. Wrap output in <think>...</think> before the JSON
+    #   2. Wrap the JSON in markdown fences (```json ... ```)
+    #   3. Append trailing commentary after the JSON
+    # Solution: extract the first complete {...} JSON object using regex,
+    # ignoring everything before and after it.
+    match = re.search(r'\{.*?\}', raw_response, re.DOTALL)
+    if not match:
+        logger.error("Groq: no JSON object found in response: %s", raw_response[:400])
+        raise json.JSONDecodeError("No JSON object found in Groq response", raw_response, 0)
+
+    raw_json = match.group(0)
 
     try:
         fields = json.loads(raw_json)
