@@ -79,6 +79,40 @@ Rules:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _extract_json_object(text: str) -> str:
+    """
+    Extract the last top-level JSON object from text by scanning for balanced
+    braces from right to left. This handles reasoning models that emit
+    <think> blocks (which may contain { } characters) before the actual JSON,
+    and also handles trailing markdown fences or commentary after the JSON.
+
+    Returns the JSON string, or empty string if none found.
+    """
+    # Find the last '}' in the text — the actual JSON output comes after
+    # any <think> block, so the last complete object is the one we want.
+    last_close = text.rfind("}")
+    if last_close == -1:
+        return ""
+
+    # Walk backwards counting brace depth to find the matching opening '{'
+    depth = 0
+    for i in range(last_close, -1, -1):
+        if text[i] == "}":
+            depth += 1
+        elif text[i] == "{":
+            depth -= 1
+            if depth == 0:
+                candidate = text[i:last_close + 1]
+                # Validate it's actually parseable JSON before returning
+                try:
+                    json.loads(candidate)
+                    return candidate
+                except json.JSONDecodeError:
+                    # Keep scanning leftward for an earlier opening brace
+                    depth = 1  # reset and continue
+    return ""
+
+
 def extract_report_fields(raw_text: str) -> dict:
     """
     Extract structured fields from a citizen's raw report text.
@@ -118,18 +152,13 @@ def extract_report_fields(raw_text: str) -> dict:
 
     raw_response = response.choices[0].message.content or ""
 
-    # The model (qwen3.6-27b) is a reasoning model that may:
-    #   1. Wrap output in <think>...</think> before the JSON
-    #   2. Wrap the JSON in markdown fences (```json ... ```)
-    #   3. Append trailing commentary after the JSON
-    # Solution: extract the first complete {...} JSON object using regex,
-    # ignoring everything before and after it.
-    match = re.search(r'\{.*?\}', raw_response, re.DOTALL)
-    if not match:
+    # qwen3.6-27b is a reasoning model. It wraps output in <think>...</think>
+    # and may also use markdown fences. Strategy: find the last top-level
+    # JSON object in the response by scanning for balanced braces from the end.
+    raw_json = _extract_json_object(raw_response)
+    if not raw_json:
         logger.error("Groq: no JSON object found in response: %s", raw_response[:400])
         raise json.JSONDecodeError("No JSON object found in Groq response", raw_response, 0)
-
-    raw_json = match.group(0)
 
     try:
         fields = json.loads(raw_json)
