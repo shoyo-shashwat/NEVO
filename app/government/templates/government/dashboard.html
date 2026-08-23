@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="gov-dashboard">
+
+  <div class="gov-dashboard__head">
+    <div>
+      <span class="gov-dashboard__role-badge">
+        {% if role == 'mp' %}
+          <svg width="13" height="13"><use href="#icon-shield"/></svg> MP priority queue
+        {% else %}
+          <svg width="13" height="13"><use href="#icon-building"/></svg> Officer implementation queue
+        {% endif %}
+      </span>
+      <h1>
+        {% if role == 'mp' %}
+          What needs your decision
+        {% else %}
+          What needs implementation follow-up
+        {% endif %}
+      </h1>
+      <p class="dashboard__country">
+        <svg width="15" height="15"><use href="#icon-building"/></svg>
+        {{ country_code }}
+        {% if role == 'mp' %}
+          · ranked by real evidence — prioritise, defer, or reject
+        {% else %}
+          · where investment is missing, and what's already under way
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {# --- Quick-glance stat strip — Round 4 "dashboard is very empty" fix --- #}
+  <div class="dashboard-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ stats.active_signals }}</span>
+      <span class="dashboard-stat__label">Active signals</span>
+    </div>
+    <div class="dashboard-stat dashboard-stat--critical">
+      <span class="dashboard-stat__value">{{ stats.critical_count }}</span>
+      <span class="dashboard-stat__label">Critical priority</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ stats.awaiting_decision }}</span>
+      <span class="dashboard-stat__label">Awaiting decision</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ stats.decisions_recorded }}</span>
+      <span class="dashboard-stat__label">Decisions recorded (all time)</span>
+    </div>
+  </div>
+
+  {% if role == 'mp' %}
+    {# ---------------- MP view: strategic / prioritisation lens ---------------- #}
+
+    {% if top_cards %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-chart"/></svg> Top priorities</h2>
+      <p class="dashboard-section__hint">Ranked by real evidence strength, severity and population affected — the ones most worth your attention first.</p>
+      {% for card in top_cards %}
+        {% include "government/_cluster_card.html" %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if emerging_cards %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-chart"/></svg> Emerging gaps</h2>
+      <p class="dashboard-section__hint">Demand rising faster than coverage is keeping up with — worth getting ahead of before it becomes a top priority.</p>
+      {% for card in emerging_cards %}
+        {% include "government/_cluster_card.html" %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if pending_cards %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-clock"/></svg> Awaiting your decision</h2>
+      <p class="dashboard-section__hint">A government actor opened these but no decision has been recorded yet.</p>
+      {% for card in pending_cards %}
+        {% include "government/_cluster_card.html" %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if not top_cards and not emerging_cards and not pending_cards %}
+      <p class="empty-state">No active demand signals for your area yet. New citizen reports will appear here once they cluster into a collective issue.</p>
+    {% endif %}
+
+  {% else %}
+    {# ---------------- Planning Officer view: operational / implementation lens ---------------- #}
+
+    {% if investment_gap_cards %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-building"/></svg> Investment &amp; intervention gaps</h2>
+      <p class="dashboard-section__hint">Demand with no matching investment on record, or only partial coverage — candidates for a new project proposal.</p>
+      {% for card in investment_gap_cards %}
+        {% include "government/_cluster_card.html" %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if pending_cards %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-clock"/></svg> Awaiting validation</h2>
+      <p class="dashboard-section__hint">Opened but not yet decided — these may need you to validate the evidence before an MP can act on them.</p>
+      {% for card in pending_cards %}
+        {% include "government/_cluster_card.html" %}
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-map"/></svg> Your projects in progress</h2>
+      <p class="dashboard-section__hint">Everything you're tracking that isn't finished yet.</p>
+      {% if in_progress_projects %}
+        {% for p in in_progress_projects %}
+          <div class="mini-project-card">
+            <span class="mini-project-card__name">{{ p.name }}</span>
+            <span class="project-card__status project-card__status--{{ p.status | lower }}">{{ p.status }}</span>
+            <a href="{{ url_for('government.projects_outcomes') }}" class="mini-project-card__link">Open <svg width="12" height="12"><use href="#icon-arrow-right"/></svg></a>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="empty-state empty-state--small">No projects in progress yet — propose one from a demand's evidence page.</p>
+      {% endif %}
+    </section>
+
+    {% if not investment_gap_cards and not pending_cards and not in_progress_projects %}
+      <p class="empty-state">No active demand signals for your area yet. New citizen reports will appear here once they cluster into a collective issue.</p>
+    {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}

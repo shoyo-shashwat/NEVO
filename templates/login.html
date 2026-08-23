@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Sign in — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="login-page">
+
+  <div class="login-page__card">
+    <span class="login-page__badge">Demo sign-in</span>
+    <h1 class="login-page__heading">Choose a demo account</h1>
+    <p class="login-page__sub">
+      This hackathon build uses seeded identities instead of real accounts or
+      passwords — there's nothing to type here. Pick who you want to be, and
+      the app opens the screens that identity would actually see.
+    </p>
+
+    <div class="login-page__roles">
+      <div class="login-page__role">
+        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-megaphone"/></svg></span>
+        <div>
+          <strong>Citizen</strong>
+          <span>Report a problem, follow it to a decision</span>
+        </div>
+      </div>
+      <div class="login-page__role">
+        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-shield"/></svg></span>
+        <div>
+          <strong>MP</strong>
+          <span>Prioritise, defer or reject collective demand</span>
+        </div>
+      </div>
+      <div class="login-page__role">
+        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-building"/></svg></span>
+        <div>
+          <strong>Planning Officer</strong>
+          <span>Validate evidence, track projects &amp; outcomes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-page__credentials">
+    <h2 class="login-page__credentials-title">Demo credentials</h2>
+    <p class="login-page__credentials-hint">Grouped by country — pick any one to continue.</p>
+
+    <form method="POST" action="{{ url_for('login_page') }}">
+      <div class="role-select__groups">
+        {% set countries = [('IN', '🇮🇳 India'), ('BR', '🇧🇷 Brazil'), ('RU', '🇷🇺 Russia')] %}
+        {% for code, label in countries %}
+          <div class="role-group">
+            <h3 class="role-group__country">{{ label }}</h3>
+            {% for actor in actors %}
+              {% if actor.country_code == code %}
+                <label class="role-option {% if session.get('actor_id') == actor.id %}role-option--active{% endif %}">
+                  <input type="radio" name="actor_id" value="{{ actor.id }}"
+                    {% if session.get('actor_id') == actor.id %}checked{% endif %}>
+                  <span class="role-option__name">{{ actor.name }}</span>
+                  <span class="role-option__role">{{ actor.role | replace('_', ' ') | title }}</span>
+                </label>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--large">Continue with this account</button>
+    </form>
+
+    <p class="login-page__back"><a href="{{ url_for('role_select') }}">&larr; Back to the overview</a></p>
+  </div>
+
+</div>
+{% endblock %}

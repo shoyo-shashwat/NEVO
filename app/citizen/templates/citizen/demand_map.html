@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Community Demand Map — BRICS People First{% endblock %}
+
+{% block head %}
+  {# Leaflet — lightweight, no framework. Vendored locally under
+     static/vendor/leaflet/ rather than loaded from a CDN, so the map still
+     works on networks that block unpkg.com (map tiles themselves still need
+     internet — that's unavoidable for any real map). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+{% endblock %}
+
+{% block content %}
+{# Category → marker icon, shared with the sidebar list below and with the
+   map JS (which mirrors this same code→icon mapping for the fetched pins). #}
+{% set CAT_ICONS = {
+  'water_sanitation': 'icon-cat-water',
+  'roads_transport': 'icon-cat-road',
+  'electricity_utilities': 'icon-cat-electricity',
+  'education_access': 'icon-cat-education',
+  'waste_environment': 'icon-cat-waste',
+  'healthcare_access': 'icon-cat-health',
+} %}
+
+<div class="map-page">
+  <h1>Community demand map</h1>
+  <p class="page-hint">
+    Every pin is a collective demand cluster in {{ country_code }}, not an individual complaint —
+    filter by category, or click a pin for details.
+  </p>
+
+  <div class="map-layout">
+    <aside class="map-sidebar">
+      <h2 class="map-sidebar__title">Categories</h2>
+      <ul class="map-category-list">
+        <li class="map-category-item map-category-item--active" data-cat="">
+          <span class="map-category-item__icon"><svg width="15" height="15"><use href="#icon-map"/></svg></span>
+          <span class="map-category-item__label">All issues</span>
+          <span class="map-category-item__count" data-count-for="">–</span>
+        </li>
+        {% for cat in categories %}
+          <li class="map-category-item" data-cat="{{ cat.id }}">
+            <span class="map-category-item__icon"><svg width="15" height="15"><use href="#{{ CAT_ICONS.get(cat.code, 'icon-cat-default') }}"/></svg></span>
+            <span class="map-category-item__label">{{ cat.name }}</span>
+            <span class="map-category-item__count" data-count-for="{{ cat.id }}">–</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+
+    <div class="map-main">
+      <div id="map"></div>
+    </div>
+
+    <aside class="map-feed">
+      <h2 class="map-feed__title">Active near you</h2>
+      <ul class="map-feed-list" id="map-feed-list">
+        <li class="map-feed-empty">Loading…</li>
+      </ul>
+    </aside>
+  </div>
+
+  <a href="{{ url_for('citizen.report_flow') }}" class="map-fab" aria-label="Report a problem">
+    <svg width="20" height="20"><use href="#icon-megaphone"/></svg>
+  </a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+(function () {
+  var mapView = {{ map_view | tojson }};
+  var map = L.map('map').setView(mapView.center, mapView.zoom);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  // Category code -> icon symbol id, mirrors CAT_ICONS in the template above.
+  var CATEGORY_ICONS = {
+    water_sanitation: 'icon-cat-water',
+    roads_transport: 'icon-cat-road',
+    electricity_utilities: 'icon-cat-electricity',
+    education_access: 'icon-cat-education',
+    waste_environment: 'icon-cat-waste',
+    healthcare_access: 'icon-cat-health',
+  };
+
+  function iconFor(categoryCode) {
+    var symbolId = CATEGORY_ICONS[categoryCode] || 'icon-cat-default';
+    return L.divIcon({
+      className: 'map-pin map-pin--citizen',
+      html: '<span class="map-pin__inner"><svg width="15" height="15"><use href="#' + symbolId + '"></use></svg></span>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 28],
+      popupAnchor: [0, -26],
+    });
+  }
+
+  var markers = L.layerGroup().addTo(map);
+  var activeCategory = '';
+
+  function renderFeed(features) {
+    var feedList = document.getElementById('map-feed-list');
+    feedList.innerHTML = '';
+    if (!features.length) {
+      feedList.innerHTML = '<li class="map-feed-empty">No active issues in this category yet.</li>';
+      return;
+    }
+    features.slice(0, 10).forEach(function (f) {
+      var p = f.properties;
+      var symbolId = CATEGORY_ICONS[p.category_code] || 'icon-cat-default';
+      var li = document.createElement('li');
+      li.className = 'map-feed-item';
+      li.innerHTML =
+        '<span class="map-feed-item__icon"><svg width="14" height="14"><use href="#' + symbolId + '"></use></svg></span>' +
+        '<span class="map-feed-item__body">' +
+          '<strong>' + p.category + '</strong>' +
+          '<span>' + (p.localities.join(', ') || 'Location pending') + '</span>' +
+        '</span>' +
+        '<span class="map-feed-item__status">' + p.status.replace('UnderGovernmentReview', 'Under review') + '</span>';
+      feedList.appendChild(li);
+    });
+  }
+
+  function loadData() {
+    var url = '/citizen/map/data';
+    if (activeCategory) url += '?category=' + activeCategory;
+
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (geojson) {
+        markers.clearLayers();
+
+        L.geoJSON(geojson, {
+          pointToLayer: function (feature, latlng) {
+            return L.marker(latlng, { icon: iconFor(feature.properties.category_code) });
+          },
+          onEachFeature: function (feature, layer) {
+            var p = feature.properties;
+            layer.bindPopup(
+              '<strong>' + p.category + '</strong><br>' +
+              p.localities.join(', ') + '<br>' +
+              '<em>' + p.status.replace('UnderGovernmentReview', 'Under review') + '</em>'
+            );
+          },
+        }).addTo(markers);
+
+        renderFeed(geojson.features);
+      });
+  }
+
+  // Category counts need the *unfiltered* full set, fetched once up front —
+  // independent of whichever filter is currently active on the map itself.
+  fetch('/citizen/map/data')
+    .then(function (r) { return r.json(); })
+    .then(function (geojson) {
+      var counts = {};
+      geojson.features.forEach(function (f) {
+        var name = f.properties.category;
+        counts[name] = (counts[name] || 0) + 1;
+      });
+      document.querySelectorAll('.map-category-item[data-cat]').forEach(function (item) {
+        var label = item.querySelector('.map-category-item__label').textContent;
+        var countEl = item.querySelector('.map-category-item__count');
+        if (item.dataset.cat === '') {
+          countEl.textContent = geojson.features.length;
+        } else {
+          countEl.textContent = counts[label] || 0;
+        }
+      });
+    });
+
+  // Category filter — sidebar list instead of the old top button row.
+  document.querySelectorAll('.map-category-item').forEach(function (item) {
+    item.addEventListener('click', function () {
+      document.querySelectorAll('.map-category-item').forEach(function (b) {
+        b.classList.remove('map-category-item--active');
+      });
+      item.classList.add('map-category-item--active');
+      activeCategory = item.dataset.cat;
+      loadData();
+    });
+  });
+
+  loadData();
+}());
+</script>
+{% endblock %}

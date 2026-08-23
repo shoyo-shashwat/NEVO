@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}Report a problem — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="report-flow-page">
+
+  {% if clarification %}
+    <div class="report-flow__clarification-banner">
+      <span class="report-flow__clarification-icon"><svg width="18" height="18"><use href="#icon-mic"/></svg></span>
+      <div>
+        <p class="report-flow__clarification-label">One more detail needed</p>
+        <p class="report-flow__ai-q">{{ clarification }}</p>
+      </div>
+    </div>
+  {% else %}
+    <div class="report-flow__intro">
+      <span class="home__eyebrow">Step 1 of 4 · You report it</span>
+      <h1 class="report-flow__heading">What's the problem?</h1>
+      <p class="report-flow__hint">Describe it in your own words — voice or text, no government-style form to fill in.</p>
+    </div>
+  {% endif %}
+
+  <div class="report-flow">
+    <form method="POST" action="{{ url_for('citizen.report_flow') }}"
+          enctype="multipart/form-data" id="report-form">
+
+      <input type="hidden" name="channel" id="channel-input" value="text">
+      <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
+      <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
+
+      <div class="report-flow__card">
+        {# Main input — voice fills this via Web Speech API, text typed directly #}
+        <textarea
+          name="text_input"
+          id="text-input"
+          class="report-flow__textarea"
+          rows="4"
+          placeholder="e.g. There is no clean water in our area for the past two months…"
+          autofocus
+        >{{ partial_text or '' }}</textarea>
+
+        {# Voice button — uses Web Speech API to type into the textarea live #}
+        <div class="report-flow__voice">
+          <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
+            <svg width="16" height="16"><use href="#icon-mic"/></svg>
+            Speak
+          </button>
+          <span id="mic-status" class="report-flow__mic-status"></span>
+        </div>
+      </div>
+
+      <div class="report-flow__fields">
+        {# Location hint — optional, gives AI a fallback if not mentioned in text #}
+        <div class="report-flow__field-card report-flow__location">
+          <label for="location-hint" class="report-flow__location-label">
+            <svg width="15" height="15" style="vertical-align:-2px;margin-right:3px;"><use href="#icon-pin"/></svg>
+            Which area or neighbourhood? <span class="report-flow__optional">(optional)</span>
+          </label>
+          <input
+            type="text"
+            name="location_hint"
+            id="location-hint"
+            class="report-flow__location-input"
+            placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
+            value="{{ location_hint or '' }}"
+          >
+          <p id="geo-status" class="report-flow__geo-status"></p>
+        </div>
+
+        {# Evidence photo — optional, Finding 6. Image-only for MVP. #}
+        <div class="report-flow__field-card report-flow__evidence">
+          <label for="evidence-photo" class="report-flow__evidence-label">
+            <svg width="15" height="15" style="vertical-align:-2px;margin-right:2px;"><use href="#icon-camera"/></svg>
+            Add a photo <span class="report-flow__optional">(optional)</span>
+          </label>
+          <input type="file" name="evidence_photo" id="evidence-photo" accept="image/*">
+          <p class="report-flow__field-hint">A photo makes it easier for officials to verify the issue.</p>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--large report-flow__submit">
+        <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+        Submit report
+      </button>
+    </form>
+
+    <aside class="report-flow__sidebar">
+      <h2 class="report-flow__sidebar-title">What happens next</h2>
+      <ol class="report-flow__next-steps">
+        <li>
+          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-people"/></svg></span>
+          We check if others already reported the same problem nearby.
+        </li>
+        <li>
+          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-building"/></svg></span>
+          Once enough voices join, it becomes visible to government reviewers.
+        </li>
+        <li>
+          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-check"/></svg></span>
+          You can follow the whole journey from your timeline, including the final outcome.
+        </li>
+      </ol>
+    </aside>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// GPS location capture — non-blocking, fills hidden lat/lng fields.
+// If denied or unavailable, location_hint text field is the fallback.
+(function () {
+  var latInput = document.getElementById('latitude-input');
+  var lngInput = document.getElementById('longitude-input');
+  var geoStatus = document.getElementById('geo-status');
+
+  if (!navigator.geolocation) { return; }
+
+  geoStatus.textContent = 'Detecting your location\u2026';
+
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      // Don't overwrite GPS already carried from a prior clarification round-trip
+      if (!latInput.value) {
+        latInput.value = pos.coords.latitude;
+        lngInput.value = pos.coords.longitude;
+      }
+      geoStatus.textContent = 'Location detected \u2713';
+    },
+    function () {
+      geoStatus.textContent = '';
+    },
+    { timeout: 8000, maximumAge: 60000 }
+  );
+}());
+
+// Web Speech API — types words directly into the textarea as the citizen speaks.
+// No audio file upload needed for the common case.
+// Falls back gracefully if the browser doesn't support it.
+(function () {
+  var micBtn = document.getElementById('mic-btn');
+  var micStatus = document.getElementById('mic-status');
+  var textInput = document.getElementById('text-input');
+
+  // Check browser support
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    micBtn.style.display = 'none';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';  // default; citizen's browser locale will often override
+
+  var isRecording = false;
+  var baseText = '';   // text already in box before this recording session
+
+  recognition.onresult = function (event) {
+    var interim = '';
+    var final = '';
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript + ' ';
+      } else {
+        interim += transcript;
+      }
+    }
+    if (final) baseText += final;
+    // Show confirmed words + interim in textarea
+    textInput.value = baseText + interim;
+  };
+
+  var MIC_LABEL_IDLE = '<svg width="16" height="16"><use href="#icon-mic"></use></svg> Speak';
+  var MIC_LABEL_RECORDING = '⏹ Stop';
+
+  recognition.onerror = function (e) {
+    micStatus.textContent = 'Microphone error: ' + e.error;
+    isRecording = false;
+    micBtn.innerHTML = MIC_LABEL_IDLE;
+  };
+
+  recognition.onend = function () {
+    if (isRecording) {
+      // Auto-restart to keep recording (continuous mode sometimes stops on silence)
+      recognition.start();
+    }
+  };
+
+  micBtn.addEventListener('click', function () {
+    if (!isRecording) {
+      baseText = textInput.value;   // preserve any text already typed
+      recognition.start();
+      isRecording = true;
+      micBtn.innerHTML = MIC_LABEL_RECORDING;
+      micStatus.textContent = 'Listening…';
+    } else {
+      recognition.stop();
+      isRecording = false;
+      micBtn.innerHTML = MIC_LABEL_IDLE;
+      micStatus.textContent = 'Done — review and submit.';
+    }
+  });
+}());
+</script>
+{% endblock %}

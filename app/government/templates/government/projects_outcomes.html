@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Projects & Outcomes — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="projects-outcomes">
+  <h1>Projects &amp; outcomes</h1>
+  <p class="page-hint">Every intervention linked to a citizen demand, its implementation status, and whether the outcome has been verified against the ground.</p>
+
+  {% if project_data %}
+  <div class="dashboard-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ project_stats.total }}</span>
+      <span class="dashboard-stat__label">Total projects</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ project_stats.in_progress }}</span>
+      <span class="dashboard-stat__label">In progress</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ project_stats.completed }}</span>
+      <span class="dashboard-stat__label">Completed</span>
+    </div>
+    <div class="dashboard-stat dashboard-stat--verified">
+      <span class="dashboard-stat__value">{{ project_stats.verified_outcomes }}</span>
+      <span class="dashboard-stat__label">Verified outcomes</span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not project_data %}
+    <p class="empty-state">No projects linked yet — propose one from any demand's evidence page once you've reviewed it.</p>
+  {% endif %}
+
+  {% for item in project_data %}
+    {% set p = item.project %}
+    {% set outcome = item.outcome %}
+    {% set cluster = item.cluster %}
+
+    <div class="project-card">
+      <div class="project-card__header">
+        <span class="project-card__name">{{ p.name }}</span>
+        <span class="project-card__status project-card__status--{{ p.status | lower }}">
+          {{ p.status }}
+        </span>
+      </div>
+
+      {# Implementation stepper — Round 4 "very empty" fix: a quick visual read
+         of where a project sits, without opening the Update panel. #}
+      {% set stages = ['Planning', 'Approval', 'Tender', 'Construction', 'Completion'] %}
+      {% set current_index = stages.index(p.status) if p.status in stages else 0 %}
+      <ol class="project-stepper">
+        {% for stage in stages %}
+          <li class="project-stepper__step {% if loop.index0 < current_index %}project-stepper__step--done{% elif loop.index0 == current_index %}project-stepper__step--active{% endif %}">
+            {{ stage }}
+          </li>
+        {% endfor %}
+      </ol>
+
+      {% if cluster %}
+        <p class="project-card__demand">
+          <svg width="13" height="13"><use href="#icon-pin"/></svg>
+          Linked demand: {{ cluster.affected_localities | join(', ') }}
+          · <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}">View evidence</a>
+        </p>
+      {% endif %}
+
+      {% if p.milestones %}
+        <ol class="project-milestones">
+          {% for m in p.milestones %}
+            <li class="project-milestone project-milestone--{{ m.status | default('pending') }}">
+              {{ m.label }} {% if m.date %}({{ m.date }}){% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% endif %}
+
+      {# Outcome — never invent numbers, always show AwaitingOutcomeData honestly #}
+      <div class="project-outcome">
+        {% if outcome %}
+          {% if outcome.status == 'Verified' and outcome.after_indicator %}
+            <p class="outcome--verified">Outcome: {{ outcome.after_indicator }}</p>
+            {% if outcome.impact_percent %}
+              <p class="outcome__impact">{{ outcome.impact_percent }}% improvement</p>
+            {% endif %}
+          {% else %}
+            <p class="outcome--waiting">Awaiting outcome data</p>
+          {% endif %}
+        {% else %}
+          <p class="outcome--waiting">Awaiting outcome data</p>
+        {% endif %}
+      </div>
+
+      {# Update implementation / record outcome — Government §3.
+         Both actions available to MP and Planning Officer. #}
+      <details class="project-actions">
+        <summary>Update</summary>
+
+        <form method="POST" action="{{ url_for('government.update_project_status', project_id=p.id) }}"
+              class="project-update-form">
+          <label for="status-{{ p.id }}">Status</label>
+          <select name="status" id="status-{{ p.id }}">
+            {% for s in ['Planning', 'Approval', 'Tender', 'Construction', 'Completion'] %}
+              <option value="{{ s }}" {% if p.status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+          <input type="text" name="milestone_label" placeholder="Add a milestone (optional)">
+          <button type="submit" class="btn btn--small btn--secondary">Update status</button>
+        </form>
+
+        <form method="POST" action="{{ url_for('government.record_outcome', project_id=p.id) }}"
+              class="project-outcome-form">
+          <label for="before-{{ p.id }}">Before indicator</label>
+          <input type="text" id="before-{{ p.id }}" name="before_indicator"
+                 value="{{ outcome.before_indicator if outcome else '' }}"
+                 placeholder="e.g. 31 km to nearest facility">
+          <label for="after-{{ p.id }}">After indicator</label>
+          <input type="text" id="after-{{ p.id }}" name="after_indicator"
+                 value="{{ outcome.after_indicator if outcome else '' }}"
+                 placeholder="e.g. New PHC opened, 4 km away">
+          <label for="impact-{{ p.id }}">Impact % (optional)</label>
+          <input type="number" step="0.1" id="impact-{{ p.id }}" name="impact_percent"
+                 value="{{ outcome.impact_percent if outcome else '' }}">
+          <label class="project-outcome-form__verify">
+            <input type="checkbox" name="verified">
+            Confirm this outcome is verified
+          </label>
+          <button type="submit" class="btn btn--small btn--secondary">Record outcome</button>
+        </form>
+      </details>
+    </div>
+
+  {% endfor %}
+</div>
+{% endblock %}

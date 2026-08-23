@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Decision — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="decision-workspace">
+  <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}" class="decision-workspace__back">
+    <svg width="13" height="13" style="transform:rotate(180deg);"><use href="#icon-arrow-right"/></svg> Back to evidence
+  </a>
+
+  <h1>Record your decision</h1>
+  <p class="decision-workspace__cluster">
+    <svg width="14" height="14"><use href="#icon-pin"/></svg>
+    {{ cluster.affected_localities | join(' · ') }}
+    {% if category %} · {{ category.name }}{% endif %}
+  </p>
+
+  {% if existing_decision %}
+    <div class="decision-workspace__existing">
+      <span class="decision-workspace__existing-label">Previous decision</span>
+      <strong>{{ existing_decision.decision_type }}</strong> — {{ existing_decision.reason }}
+    </div>
+  {% endif %}
+
+  <form method="POST">
+
+    {# Action set differs by role and current workflow state #}
+    <fieldset class="decision-options">
+      <legend>What would you like to do?</legend>
+
+      {% if role == 'mp' %}
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Prioritize" required>
+          <span class="decision-option-card__body">
+            <strong>Prioritise / recommend action</strong>
+            <span>Move this forward — a Planning Officer can now propose or link a project to it.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Defer">
+          <span class="decision-option-card__body">
+            <strong>Defer</strong>
+            <span>Not now — worth revisiting later, but not an active priority today.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Deprioritize">
+          <span class="decision-option-card__body">
+            <strong>Deprioritise / reject</strong>
+            <span>This will not be pursued. The reason you give is shown to affected citizens.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="NeedsValidation">
+          <span class="decision-option-card__body">
+            <strong>Request validation</strong>
+            <span>Send this to a Planning Officer to confirm the evidence before you decide.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Redirected">
+          <span class="decision-option-card__body">
+            <strong>Redirect to another authority</strong>
+            <span>This isn't within your remit — explain where it should go instead.</span>
+          </span>
+        </label>
+
+      {% elif role == 'planning_officer' %}
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="NeedsValidation" required>
+          <span class="decision-option-card__body">
+            <strong>Validate evidence</strong>
+            <span>Confirm the reported evidence checks out — this is the most common first step.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Prioritize">
+          <span class="decision-option-card__body">
+            <strong>Propose for action</strong>
+            <span>Recommend this to an MP for prioritisation.</span>
+          </span>
+        </label>
+        <label class="decision-option-card">
+          <input type="radio" name="decision_type" value="Redirected">
+          <span class="decision-option-card__body">
+            <strong>Redirect</strong>
+            <span>This belongs with a different department or authority.</span>
+          </span>
+        </label>
+      {% endif %}
+    </fieldset>
+
+    {#
+      Reason — human-authored only.
+      This textarea is the ONLY permitted source for GovernmentDecision.reason.
+      No AI-generated text may pre-populate or override this field.
+    #}
+    <div class="decision-reason">
+      <label for="reason">
+        Reason <span class="required">*</span>
+        <span class="decision-reason__note">— your own words, shown to affected citizens</span>
+      </label>
+      <textarea
+        id="reason"
+        name="reason"
+        rows="4"
+        required
+        placeholder="Explain the reason for this decision…"
+      ></textarea>
+    </div>
+
+    {# Link to an existing project (optional) #}
+    {% if projects %}
+    <div class="decision-link-project">
+      <label for="linked_project_id">Link to existing project <span class="report-flow__optional">(optional)</span></label>
+      <select name="linked_project_id" id="linked_project_id">
+        <option value="">— none —</option>
+        {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }} ({{ p.status }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="decision-workspace__actions">
+      <button type="submit" class="btn btn--primary btn--large">Record decision</button>
+      <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}"
+         class="btn btn--secondary">Cancel</a>
+    </div>
+
+  </form>
+
+  {# Propose a new project/intervention for this demand — Government §3
+     "Propose an action/project candidate". Separate form: creating a
+     project is independent of recording a decision above. #}
+  <div class="decision-propose-project">
+    <h2><svg width="16" height="16" style="vertical-align:-2px;"><use href="#icon-map"/></svg> Propose a project</h2>
+    <p class="decision-propose-project__hint">
+      No suitable existing project? Start one and link it to this demand — you can update its
+      status and outcome later from Projects &amp; outcomes.
+    </p>
+    <form method="POST" action="{{ url_for('government.propose_project', cluster_id=cluster.id) }}"
+          class="propose-project-form">
+      <label for="project_name">Project name</label>
+      <input type="text" name="project_name" id="project_name" required
+             placeholder="e.g. Nashik Rural PHC Upgradation">
+      <label for="expected_completion">Expected completion (optional)</label>
+      <input type="date" name="expected_completion" id="expected_completion">
+      <button type="submit" class="btn btn--secondary">Create &amp; link project</button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

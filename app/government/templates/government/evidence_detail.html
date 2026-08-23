@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Evidence — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="evidence-detail">
+  <a href="{{ url_for('government.dashboard') }}" class="decision-workspace__back">
+    <svg width="13" height="13" style="transform:rotate(180deg);"><use href="#icon-arrow-right"/></svg> Back to dashboard
+  </a>
+
+  {# --- Priority headline --- #}
+  <div class="evidence-header evidence-header--{{ priority.priority | lower }}">
+    <div>
+      <span class="evidence-header__priority">{{ priority.priority }} priority</span>
+      <span class="evidence-header__category">{{ category.name if category else '' }}
+        {% if cluster.affected_localities %} · {{ cluster.affected_localities | join(' · ') }}{% endif %}
+      </span>
+    </div>
+  </div>
+  <p class="evidence-header__plain">
+    This is a plain-English evidence summary for one collective demand — everything below is
+    computed fresh from citizen reports and official data, not opinion.
+  </p>
+
+  {# --- Demand --- #}
+  <section class="evidence-section">
+    <h2><svg width="14" height="14"><use href="#icon-people"/></svg> Demand — how many people, how strongly</h2>
+    <ul class="evidence-list">
+      <li>{{ cluster.unique_contributors }} unique contributors</li>
+      <li>{{ cluster.total_reports }} reports</li>
+      <li>{{ cluster.affected_localities | join(' · ') }}</li>
+      {% if cluster.trend == 'increasing' %}<li>↑ Increasing — more people are joining this over time</li>{% endif %}
+    </ul>
+
+    {# Community sentiment — shown alongside official status, never merged #}
+    {% set sentiment = cluster.community_sentiment %}
+    {% if sentiment.total > 0 %}
+      <p class="evidence-sentiment">
+        Community says: <strong>{{ sentiment.still_affected_pct }}% still affected</strong>
+        <span class="evidence-sentiment__official">
+          Official status: {{ cluster.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+        </span>
+      </p>
+    {% endif %}
+  </section>
+
+  {# --- Infrastructure --- #}
+  <section class="evidence-section">
+    <h2><svg width="14" height="14"><use href="#icon-building"/></svg> Infrastructure — what's already there</h2>
+    <ul class="evidence-list">
+      <li>Coverage: <strong>{{ gap.official_coverage or 'Unknown' }}</strong></li>
+      {% if gap.nearest_facility_km %}
+        <li>Nearest facility: {{ gap.nearest_facility_km }} km away</li>
+      {% endif %}
+      <li>Data freshness: {{ gap.infra_data_freshness or 'unknown' }}
+        {% if gap.infra_source %} — {{ gap.infra_source }}{% endif %}
+      </li>
+    </ul>
+  </section>
+
+  {# --- Demographics --- #}
+  <section class="evidence-section">
+    <h2><svg width="14" height="14"><use href="#icon-people"/></svg> Population affected</h2>
+    <ul class="evidence-list">
+      {% if gap.population_affected %}
+        <li>Estimated <strong>{{ gap.population_affected | int }}</strong> people live in the affected area</li>
+      {% else %}
+        <li>Population data unavailable for this area</li>
+      {% endif %}
+    </ul>
+  </section>
+
+  {# --- Investment / Intervention --- #}
+  <section class="evidence-section">
+    <h2><svg width="14" height="14"><use href="#icon-chart"/></svg> Existing investment — is this already being addressed?</h2>
+    <p class="evidence-alignment evidence-alignment--{{ alignment.state | lower | replace('_', '-') }}">
+      {{ alignment.state | replace('_', ' ') | title }}
+    </p>
+    <p class="evidence-reasoning">{{ alignment.reasoning }}</p>
+  </section>
+
+  {# --- Evidence confidence + WHY FLAGGED --- #}
+  <section class="evidence-section">
+    <h2><svg width="14" height="14"><use href="#icon-shield"/></svg> How confident is this evidence?</h2>
+    <p class="evidence-confidence evidence-confidence--{{ confidence.confidence | lower }}">
+      {{ confidence.confidence | replace('_', ' ') | title }}
+    </p>
+    <ul class="evidence-list">
+      {% if dominant_severity %}
+        <li>Severity: <strong>{{ dominant_severity | title }}</strong></li>
+      {% endif %}
+      {% for reason in confidence.reasons %}
+        <li>{{ reason }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {# --- Why flagged --- #}
+  <section class="evidence-section evidence-section--recommendation">
+    <h2><svg width="14" height="14"><use href="#icon-clock"/></svg> Why this was flagged to you</h2>
+    <ul class="evidence-list">
+      {% for reason in priority.reasons %}
+        <li>{{ reason }}</li>
+      {% endfor %}
+    </ul>
+    <p class="evidence-next-step">
+      <strong>Recommended next step:</strong> {{ priority.recommended_next_step }}
+    </p>
+  </section>
+
+  {# --- Action block --- #}
+  <div class="evidence-actions">
+    {% if existing_decision %}
+      <div class="evidence-decision-recorded">
+        <strong>Decision recorded:</strong>
+        {{ existing_decision.decision_type }} — {{ existing_decision.reason }}
+      </div>
+    {% endif %}
+
+    {# Before review: just Review + Request Validation #}
+    {% if cluster.review_status == 'NotReviewed' %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--primary btn--large">Review &amp; decide</a>
+    {% elif cluster.review_status in ('UnderReview', 'PendingValidation') %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--primary btn--large">Record decision</a>
+    {% else %}
+      <a href="{{ url_for('government.decision_workspace', cluster_id=cluster.id) }}"
+         class="btn btn--secondary">Update decision</a>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}BRICS People First — Individual Voice to Collective Demand{% endblock %}
+
+{% block content %}
+<div class="landing">
+
+  <section class="landing__hero">
+    <span class="home__eyebrow">India · Brazil · Russia</span>
+    <h1 class="landing__heading">From individual voice to collective demand to visible outcome</h1>
+    <p class="landing__sub">
+      Report a development problem in your own words. See whether your community
+      already asked for the same thing. Follow it all the way to a government
+      decision — and find out whether it actually got better.
+    </p>
+    <div class="landing__cta-row">
+      <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary btn--large">
+        <svg width="18" height="18"><use href="#icon-megaphone"/></svg>
+        Report a problem
+      </a>
+      <a href="{{ url_for('citizen.community') }}" class="btn btn--secondary btn--large">
+        See what your community needs
+      </a>
+    </div>
+  </section>
+
+  <section class="landing__steps">
+    <div class="landing__step">
+      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-mic"/></svg></span>
+      <h3>1. You report it</h3>
+      <p>Speak, type, or message it — in your own language. No government-style form.</p>
+    </div>
+    <div class="landing__step">
+      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-people"/></svg></span>
+      <h3>2. It becomes collective demand</h3>
+      <p>We find everyone else reporting the same need and show the real scale of it.</p>
+    </div>
+    <div class="landing__step">
+      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-building"/></svg></span>
+      <h3>3. Government reviews it</h3>
+      <p>Officials see the evidence and record a decision — with a reason you can read.</p>
+    </div>
+    <div class="landing__step">
+      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-check"/></svg></span>
+      <h3>4. You see the outcome</h3>
+      <p>Track implementation and find out whether the original problem actually improved.</p>
+    </div>
+  </section>
+
+  <p class="landing__positioning">
+    This isn't another complaint box — existing systems already take complaints.
+    What's missing is visibility: seeing that your voice joined thousands of others,
+    and following it all the way to a decision and a result.
+  </p>
+
+  <section class="landing__demo-cta">
+    <div class="landing__demo-cta-inner">
+      <span class="landing__demo-cta-icon"><svg width="22" height="22"><use href="#icon-shield"/></svg></span>
+      <div>
+        <h2 class="landing__demo-cta-title">Want to see the government side, or your own report history?</h2>
+        <p class="landing__demo-cta-hint">
+          Reporting a problem and browsing the community map work immediately — no
+          account needed. Sign in with a seeded demo identity only if you want a
+          personal timeline, or want to see how an MP or Planning Officer reviews
+          collective demand.
+        </p>
+      </div>
+      <a href="{{ url_for('login_page') }}" class="btn btn--secondary btn--large landing__demo-cta-btn">
+        Demo sign-in
+        <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+      </a>
+    </div>
+  </section>
+</div>
+{% endblock %}

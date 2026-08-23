@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Admin — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="admin-panel">
+  <h1>Platform configuration</h1>
+  <p class="admin-panel__note">Technical configuration only — no policy authority.</p>
+
+  <section class="admin-section">
+    <h2>Countries</h2>
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Name</th><th>Languages</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for c in countries %}
+          <tr>
+            <td>{{ c.code }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.supported_languages }}</td>
+            <td>{{ c.status }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Categories</h2>
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Name</th></tr></thead>
+      <tbody>
+        {% for cat in categories %}
+          <tr><td>{{ cat.code }}</td><td>{{ cat.name }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Demo actors</h2>
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Country</th></tr></thead>
+      <tbody>
+        {% for a in actors %}
+          <tr>
+            <td><code>{{ a.id }}</code></td>
+            <td>{{ a.name }}</td>
+            <td>{{ a.role | replace('_', ' ') | title }}</td>
+            <td>{{ a.country_code }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

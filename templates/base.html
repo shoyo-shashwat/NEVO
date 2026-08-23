@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}BRICS People First{% endblock %}</title>
+  <meta name="theme-color" content="#E2582A">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if session.get('role') in ['mp','planning_officer','admin'] %}theme-gov{% else %}theme-citizen{% endif %}">
+
+<!-- Shared inline icon sprite — no external icon library, kept dependency-free -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="icon-megaphone" viewBox="0 0 24 24"><path d="M3 11v2a2 2 0 0 0 2 2h1l3 6h2l-1-6h2l8 4V5l-8 4H8a2 2 0 0 0-2 2H5a2 2 0 0 0-2 2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v16M15 5v16" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 14.3c2.7.4 4.5 2.3 4.5 5.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.6 7-12a7 7 0 1 0-14 0c0 5.4 7 12 7 12Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21V9l8-5 8 5v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 21v-6h6v6M4 21h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+
+    <!-- Category icons — Demand Intelligence Map markers (Round 4 UI fix:
+         replaces plain colored dots with a category-specific icon so a
+         water problem looks different from a road problem at a glance). -->
+    <symbol id="icon-cat-water" viewBox="0 0 24 24"><path d="M12 3s7 8 7 13a7 7 0 0 1-14 0c0-5 7-13 7-13Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-road" viewBox="0 0 24 24"><path d="M8 21 11 3h2l3 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.5v2.5M12 12v2.5M12 17.5v1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-electricity" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-education" viewBox="0 0 24 24"><path d="M3 5.5c2.3-1.3 5.7-1.3 8 0v14c-2.3-1.3-5.7-1.3-8 0v-14ZM21 5.5c-2.3-1.3-5.7-1.3-8 0v14c2.3-1.3 5.7-1.3 8 0v-14Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-waste" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-health" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-default" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
+  </defs>
+</svg>
+
+{% set is_gov = session.get('role') in ['mp', 'planning_officer', 'admin'] %}
+<header class="site-header">
+  <div class="site-header__inner">
+    <a href="{{ url_for('role_select') }}" class="site-logo">
+      <span class="site-logo__mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20"><use href="#icon-megaphone"/></svg>
+      </span>
+      <span class="site-logo__text">BRICS People First</span>
+    </a>
+
+    <nav class="site-nav-primary" aria-label="Main">
+      {% if is_gov %}
+        <a href="{{ url_for('government.dashboard') }}" class="site-nav-primary__link {% if request.endpoint == 'government.dashboard' %}site-nav-primary__link--active{% endif %}">Dashboard</a>
+        <a href="{{ url_for('government.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+        <a href="{{ url_for('government.projects_outcomes') }}" class="site-nav-primary__link {% if request.endpoint == 'government.projects_outcomes' %}site-nav-primary__link--active{% endif %}">Projects</a>
+        {% if session.get('role') == 'admin' %}
+          <a href="{{ url_for('government.admin') }}" class="site-nav-primary__link {% if request.endpoint == 'government.admin' %}site-nav-primary__link--active{% endif %}">Admin</a>
+        {% endif %}
+      {% else %}
+        <a href="{{ url_for('citizen.home') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.home' %}site-nav-primary__link--active{% endif %}">Home</a>
+        <a href="{{ url_for('citizen.report_flow') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.report_flow' %}site-nav-primary__link--active{% endif %}">Report</a>
+        <a href="{{ url_for('citizen.community') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.community' %}site-nav-primary__link--active{% endif %}">Community</a>
+        <a href="{{ url_for('citizen.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+        <a href="{{ url_for('citizen.my_timeline') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.my_timeline' %}site-nav-primary__link--active{% endif %}">My Timeline</a>
+      {% endif %}
+    </nav>
+
+    <div class="site-header__account">
+      {% if session.get('role') %}
+        <span class="nav-actor">
+          <span class="nav-actor__role">{{ session.get('role') | replace('_',' ') | title }}</span>
+          {{ session.get('actor_name', '') }}
+        </span>
+        <a href="{{ url_for('login_page') }}" class="nav-link-switch">Switch</a>
+      {% else %}
+        <a href="{{ url_for('login_page') }}" class="nav-link-switch">Demo login</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<main class="site-main">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="flash-stack">
+        {% for category, message in messages %}
+          <div class="flash flash--{{ category }}">
+            <svg width="16" height="16" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <small>Demo data — for illustration purposes only · BRICS People First</small>
+</footer>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}My Timeline — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="my-timeline">
+  <h1>My timeline</h1>
+  <p class="page-hint">
+    Every report you've submitted, and exactly where it stands — from AI understanding it,
+    to joining a community issue, to a government decision, to whether the problem
+    actually got better.
+  </p>
+
+  {% if timeline_items %}
+  <div class="dashboard-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ timeline_stats.reported }}</span>
+      <span class="dashboard-stat__label">Reported</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ timeline_stats.joined }}</span>
+      <span class="dashboard-stat__label">Joined a community issue</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__value">{{ timeline_stats.decided }}</span>
+      <span class="dashboard-stat__label">Government decided</span>
+    </div>
+    <div class="dashboard-stat dashboard-stat--verified">
+      <span class="dashboard-stat__value">{{ timeline_stats.resolved }}</span>
+      <span class="dashboard-stat__label">Resolved &amp; verified</span>
+    </div>
+  </div>
+  {% else %}
+    <div class="empty-state">
+      <p>You haven't submitted any reports yet.</p>
+      <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary" style="margin-top:0.9rem;">Report a problem</a>
+    </div>
+  {% endif %}
+
+  {% for item in timeline_items %}
+    {% set report = item.report %}
+    {% set cluster = item.cluster %}
+    {% set decision = item.decision %}
+    {% set project = item.project %}
+    {% set outcome = item.outcome %}
+
+    <div class="timeline-item">
+      <p class="timeline-item__input">{{ report.original_raw_input | truncate(120) }}</p>
+
+      <ol class="timeline-stages">
+
+        {# Stage: Submitted #}
+        <li class="stage stage--done">
+          <span class="stage__label">Submitted</span>
+        </li>
+
+        {# Stage: AI Understood #}
+        <li class="stage {% if report.status != 'Draft' %}stage--done{% else %}stage--active{% endif %}">
+          <span class="stage__label">AI understood</span>
+          {% if item.category_name %}
+            <span class="stage__detail">{{ item.category_name }}</span>
+          {% endif %}
+          {% if report.status == 'Draft' %}
+            <span class="stage__note">Waiting for more information</span>
+          {% endif %}
+        </li>
+
+        {# Stage: Joined Demand #}
+        <li class="stage {% if cluster %}stage--done{% elif report.status == 'Unclustered' %}stage--active{% else %}stage--pending{% endif %}">
+          <span class="stage__label">Joined community issue</span>
+          {% if cluster %}
+            <span class="stage__detail">
+              {{ cluster.affected_localities | join(', ') }} ·
+              {{ cluster.unique_contributors }} people
+            </span>
+          {% elif report.status == 'Unclustered' %}
+            <span class="stage__note">Finding similar reports…</span>
+          {% endif %}
+        </li>
+
+        {# Stage: Government Review #}
+        <li class="stage {% if cluster and cluster.review_status != 'NotReviewed' %}stage--done{% elif cluster %}stage--pending{% else %}stage--locked{% endif %}">
+          <span class="stage__label">Government review</span>
+          {% if cluster %}
+            <span class="stage__detail">
+              {{ cluster.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+            </span>
+            {# Community sentiment shown alongside, never merged #}
+            {% set sentiment = cluster.community_sentiment %}
+            {% if sentiment.total > 0 %}
+              <span class="stage__sentiment">Community says: {{ sentiment.still_affected_pct }}% still affected</span>
+            {% endif %}
+          {% endif %}
+        </li>
+
+        {# Stage: Decision #}
+        <li class="stage {% if decision %}stage--done{% else %}stage--pending{% endif %}">
+          <span class="stage__label">Decision</span>
+          {% if decision %}
+            <span class="stage__detail stage__detail--{{ decision.decision_type | lower }}">
+              {{ decision.decision_type }}
+            </span>
+            {# AI-simplified for citizen display; decision.reason itself is untouched
+               and remains the human-authored source of truth. Falls back to the
+               original if simplification failed or was skipped. #}
+            <p class="stage__reason">{{ item.simplified_reason or decision.reason }}</p>
+          {% endif %}
+        </li>
+
+        {# Stage: Implementation #}
+        <li class="stage {% if project %}stage--done{% else %}stage--pending{% endif %}">
+          <span class="stage__label">Implementation</span>
+          {% if project %}
+            <span class="stage__detail">{{ project.name }} · {{ project.status }}</span>
+          {% endif %}
+        </li>
+
+        {# Stage: Outcome #}
+        <li class="stage {% if outcome and outcome.status == 'Verified' %}stage--done{% elif outcome %}stage--active{% else %}stage--pending{% endif %}">
+          <span class="stage__label">Outcome</span>
+          {% if outcome %}
+            {% if outcome.status == 'Verified' and outcome.after_indicator %}
+              <span class="stage__detail">{{ outcome.after_indicator }}</span>
+            {% else %}
+              <span class="stage__note">Awaiting outcome data</span>
+            {% endif %}
+          {% endif %}
+        </li>
+
+      </ol>
+    </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

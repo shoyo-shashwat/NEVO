@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Your report — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="demand-result">
+  <span class="home__eyebrow">Step 2 of 4 · It becomes collective demand</span>
+
+  {% if match_tier == "auto_suggest" and clusters %}
+    {# High confidence — one clear "join" action #}
+    {% set top = clusters[0] %}
+    <h1>Good news — this is already a known issue</h1>
+    <p class="demand-result__lead">
+      {{ top.unique_contributors }} other {{ 'person has' if top.unique_contributors == 1 else 'people have' }}
+      already reported the same problem. Joining adds your voice to theirs, making it more visible —
+      it doesn't create a duplicate report.
+    </p>
+    <div class="cluster-card cluster-card--highlight">
+      <div class="cluster-card__header">
+        <span class="cluster-card__category">{{ top.category_name }}</span>
+        <span class="cluster-card__match">{{ top.similarity }}% match</span>
+      </div>
+      <p class="cluster-card__stats">
+        <span><svg width="14" height="14"><use href="#icon-people"/></svg> {{ top.unique_contributors }} people</span>
+        <span><svg width="14" height="14"><use href="#icon-pin"/></svg> {{ top.cluster.affected_localities | join(', ') }}</span>
+      </p>
+
+      <form method="POST" enctype="multipart/form-data" class="demand-result__actions">
+        <input type="hidden" name="cluster_id" value="{{ top.cluster.id }}">
+        <div class="demand-result__primary-actions">
+          <button name="action" value="join" class="btn btn--primary btn--large">
+            <svg width="16" height="16"><use href="#icon-check"/></svg>
+            Yes, join this issue
+          </button>
+          <button name="action" value="start_new" class="btn btn--secondary">Not the same — start new</button>
+        </div>
+        <div class="demand-result__evidence">
+          <label for="evidence-photo-top">
+            <svg width="14" height="14" style="vertical-align:-2px;"><use href="#icon-camera"/></svg>
+            Have a photo of this? <span class="report-flow__optional">(optional, strengthens the case)</span>
+          </label>
+          <input type="file" name="evidence_photo" id="evidence-photo-top" accept="image/*">
+          <button name="action" value="add_evidence" class="btn btn--tiny">Add evidence &amp; join</button>
+        </div>
+      </form>
+    </div>
+
+  {% elif match_tier == "show_candidates" and clusters %}
+    {# Medium confidence — list up to 3, citizen picks #}
+    <h1>A few similar issues found nearby</h1>
+    <p class="demand-result__lead">We're not fully sure which one matches — pick whichever describes the same problem you reported, or start a new one if none fit.</p>
+
+    <div class="demand-result__candidates">
+      {% for item in clusters %}
+        <div class="cluster-card">
+          <div class="cluster-card__header">
+            <span class="cluster-card__category">{{ item.category_name }}</span>
+            <span class="cluster-card__match">{{ item.similarity }}% match</span>
+          </div>
+          <p class="cluster-card__stats">
+            <span><svg width="14" height="14"><use href="#icon-people"/></svg> {{ item.unique_contributors }} people</span>
+            <span><svg width="14" height="14"><use href="#icon-pin"/></svg> {{ item.cluster.affected_localities | join(', ') }}</span>
+          </p>
+          <form method="POST" enctype="multipart/form-data" class="demand-result__actions">
+            <input type="hidden" name="cluster_id" value="{{ item.cluster.id }}">
+            <button name="action" value="join" class="btn btn--primary btn--small">This one — join it</button>
+            <div class="demand-result__evidence">
+              <input type="file" name="evidence_photo" id="evidence-photo-{{ loop.index }}" accept="image/*">
+              <button name="action" value="add_evidence" class="btn btn--tiny">Add evidence &amp; join</button>
+            </div>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+
+    <form method="POST" class="demand-result__none-form">
+      <button name="action" value="start_new" class="btn btn--secondary">None of these match — start a new issue</button>
+    </form>
+
+  {% else %}
+    {# No match — explicit start new only, no silent auto-create #}
+    <div class="demand-result__no-match">
+      <span class="demand-result__no-match-icon"><svg width="24" height="24"><use href="#icon-megaphone"/></svg></span>
+      <h1>You're the first to report this</h1>
+      <p class="demand-result__lead">No matching community issue exists yet — your report will start a brand new one. Others reporting the same problem later will be grouped with yours.</p>
+      <form method="POST">
+        <button name="action" value="start_new" class="btn btn--primary btn--large">Start this community issue</button>
+      </form>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
