@@ -17,6 +17,8 @@
         enctype="multipart/form-data" id="report-form">
 
     <input type="hidden" name="channel" id="channel-input" value="text">
+    <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
+    <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
 
     {# Main input — voice fills this via Web Speech API, text typed directly #}
     <textarea
@@ -49,6 +51,7 @@
         placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
         value="{{ location_hint or '' }}"
       >
+      <p id="geo-status" class="report-flow__geo-status" style="font-size:0.8rem;color:var(--color-muted);margin-top:0.25rem;"></p>
     </div>
 
     <button type="submit" class="btn btn--primary">Submit</button>
@@ -59,6 +62,33 @@
 
 {% block scripts %}
 <script>
+// GPS location capture — non-blocking, fills hidden lat/lng fields.
+// If denied or unavailable, location_hint text field is the fallback.
+(function () {
+  var latInput = document.getElementById('latitude-input');
+  var lngInput = document.getElementById('longitude-input');
+  var geoStatus = document.getElementById('geo-status');
+
+  if (!navigator.geolocation) { return; }
+
+  geoStatus.textContent = 'Detecting your location\u2026';
+
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      // Don't overwrite GPS already carried from a prior clarification round-trip
+      if (!latInput.value) {
+        latInput.value = pos.coords.latitude;
+        lngInput.value = pos.coords.longitude;
+      }
+      geoStatus.textContent = 'Location detected \u2713';
+    },
+    function () {
+      geoStatus.textContent = '';
+    },
+    { timeout: 8000, maximumAge: 60000 }
+  );
+}());
+
 // Web Speech API — types words directly into the textarea as the citizen speaks.
 // No audio file upload needed for the common case.
 // Falls back gracefully if the browser doesn't support it.

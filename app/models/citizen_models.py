@@ -55,6 +55,11 @@ class Report(db.Model):
     region_id = db.Column(
         db.String(36), db.ForeignKey("administrative_regions.id"), nullable=True
     )
+    # GPS coordinates captured client-side via navigator.geolocation.
+    # Nullable — citizen may deny permission or be on a device without GPS;
+    # location_hint text fallback still applies in that case.
+    latitude = db.Column(db.Float, nullable=True)
+    longitude = db.Column(db.Float, nullable=True)
     category_id = db.Column(
         db.String(36), db.ForeignKey("categories.id"), nullable=True
     )

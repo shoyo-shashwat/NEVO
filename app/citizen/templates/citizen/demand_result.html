@@ -9,7 +9,7 @@
     {% set top = clusters[0] %}
     <h1>A similar community issue already exists</h1>
     <div class="cluster-card cluster-card--highlight">
-      <p class="cluster-card__category">{{ top.cluster.category_id }}</p>
+      <p class="cluster-card__category">{{ top.category_name }}</p>
       <p class="cluster-card__stats">
         {{ top.unique_contributors }} people · {{ top.cluster.affected_localities | join(', ') }}
       </p>
@@ -29,7 +29,7 @@
 
     {% for item in clusters %}
       <div class="cluster-card">
-        <p class="cluster-card__category">{{ item.cluster.category_id }}</p>
+        <p class="cluster-card__category">{{ item.category_name }}</p>
         <p class="cluster-card__stats">
           {{ item.unique_contributors }} people · {{ item.cluster.affected_localities | join(', ') }}
         </p>

@@ -60,6 +60,12 @@ def report_flow():
     raw_text = ""
     location_hint = (request.form.get("location_hint") or "").strip()
 
+    # GPS — optional, client-supplied via navigator.geolocation (report_flow.html)
+    lat_raw = request.form.get("latitude", "").strip()
+    lng_raw = request.form.get("longitude", "").strip()
+    latitude = float(lat_raw) if lat_raw else None
+    longitude = float(lng_raw) if lng_raw else None
+
     if channel == "voice":
         audio = request.files.get("audio")
         if not audio:
@@ -136,6 +142,8 @@ def report_flow():
         duration=extracted.get("duration"),
         affected_group=extracted.get("affected_group"),
         status=status,
+        latitude=latitude,
+        longitude=longitude,
     )
     db.session.add(report)
     db.session.flush()   # get report.id before commit
@@ -167,6 +175,8 @@ def report_flow():
             report_id=report.id,
             partial_text=raw_text,
             location_hint=location_hint,
+            latitude=latitude,
+            longitude=longitude,
         )
 
     # --- Report is complete: embed + match ---
@@ -246,8 +256,10 @@ def demand_result(report_id):
         for m in match_result.matches:
             c = db.session.get(DemandCluster, m.cluster_id)
             if c:
+                cat = db.session.get(Category, c.category_id)
                 clusters.append({
                     "cluster": c,
+                    "category_name": cat.name if cat else "",
                     "similarity": round(m.similarity * 100),
                     "total_reports": c.total_reports,
                     "unique_contributors": c.unique_contributors,
@@ -505,6 +517,22 @@ def _create_cluster_from_report(report: Report) -> DemandCluster:
         db.session.rollback()
         logger.warning("store_cluster_embedding failed (cluster still created): %s", e)
         db.session.add(cluster)
+        db.session.flush()   # re-flush so cluster.id is valid again after rollback
+
+    # Set centroid from the founding report's GPS, if available.
+    # MUST run after the embedding try/except above — store_cluster_embedding()
+    # commits internally, so anything written before its potential rollback
+    # would be lost. This UPDATE is independent of embedding outcome.
+    if report.latitude is not None and report.longitude is not None:
+        from sqlalchemy import text as _text
+        db.session.execute(
+            _text(
+                "UPDATE demand_clusters "
+                "SET centroid = ST_SetSRID(ST_MakePoint(:lng, :lat), 4326) "
+                "WHERE id = :id"
+            ),
+            {"lng": report.longitude, "lat": report.latitude, "id": cluster.id},
+        )
 
     return cluster
 
