@@ -1,72 +1,370 @@
 {% extends "base.html" %}
-{% block title %}Sign in — BRICS People First{% endblock %}
+{% block title %}Continue as — NEVO{% endblock %}
+
+{#
+  Login flow — 1:1 recreation of two Figma frames from
+  "AREAPULSE PAGE 1 MAP INTERFACE":
+    • Login Page          — node 1190:578
+    • Login Success Page   — node 1192:945
+  All styling scoped to this template; base.html is untouched.
+  The auth mechanism is unchanged: each country card POSTs actor_id to
+  login_page, which calls set_session() and redirects to the real
+  dashboard/home. The success screen is a fetch-based progressive
+  enhancement that links straight to that same redirect target.
+#}
+
+{% block head %}
+<style>
+/* Fluid spacing scale — shared with role_select.html so both pages keep the
+   same rhythm and don't read differently on 1366 / 1536 / 1920 laptops. */
+:root{
+  --nevo-gutter:clamp(20px,5vw,64px);
+  --nevo-section-y:clamp(56px,7vw,104px);
+  --nevo-hero-top:clamp(40px,5vw,72px);
+  --nevo-heading:clamp(1.5rem,1.28rem + .9vw,1.75rem);
+}
+
+/* ========================================================================
+   Shared chrome — brand-only header + dark footer (Figma frame 1)
+   ===================================================================== */
+.site-header{
+  position:relative!important;top:auto!important;z-index:auto!important;
+  background:rgba(255,255,255,.7)!important;
+  -webkit-backdrop-filter:blur(6px)!important;backdrop-filter:blur(6px)!important;
+  border-bottom:1px solid #f0eae0!important;
+  box-shadow:0 1px 2px rgba(0,0,0,.05)!important;
+}
+.site-header__inner{
+  max-width:1280px!important;margin:0 auto!important;
+  padding:0 var(--nevo-gutter)!important;min-height:80px!important;gap:1rem!important;
+}
+.site-logo{gap:12px!important;align-items:center!important}
+.site-logo__mark{
+  width:40px!important;height:40px!important;border-radius:0!important;flex-shrink:0!important;
+  background:transparent url("{{ url_for('static', filename='img/nevo-logo.png') }}") center/contain no-repeat!important;
+}
+.site-logo__mark svg{display:none!important}
+.site-logo__text{font-size:0!important;line-height:1!important}
+.site-logo__text::after{
+  content:"NEVO";font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-size:26px;font-weight:800;letter-spacing:-.01em;color:#1c1917;
+}
+.site-nav-primary{display:none!important}
+.site-header__account{display:none!important}
+
+.site-main{
+  max-width:none!important;margin:0!important;padding:0!important;
+  background:var(--color-bg)!important;position:relative!important;overflow:hidden!important;
+  min-height:calc(100vh - 80px)!important;
+  display:flex!important;flex-direction:column!important;
+}
+.flash-stack{width:100%;max-width:448px;margin:16px auto 0;padding:0 24px}
+
+/* ---- civic backdrop (Figma: capitol + landscape) — real exported art --- */
+.nevo-bg{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;opacity:.85}
+.nevo-bg img{position:absolute;bottom:0;height:auto;object-fit:contain}
+.nevo-bg__left{left:0;width:min(38vw,460px)}
+.nevo-bg__right{right:0;width:min(46vw,620px)}
+@media(max-width:900px){.nevo-bg{display:none}}
+
+/* ---- dark footer ---------------------------------------------------- */
+.site-footer{
+  background:#1c1917!important;color:#fbf8f3!important;
+  margin:0!important;padding:0!important;border:0!important;text-align:left!important;
+}
+.site-footer small{
+  display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+  max-width:1280px;margin:0 auto;
+  padding:clamp(28px,3.5vw,44px) var(--nevo-gutter);font-size:0;
+}
+.site-footer small::before{
+  content:"";flex:none;width:52px;height:44px;
+  background:left center/contain no-repeat url("{{ url_for('static', filename='img/nevo-logo.png') }}");
+}
+.nevo-foot-copy{font:400 15px/1.5 'Inter',system-ui,sans-serif;color:#fbf8f3;opacity:.8;margin:0 auto}
+.nevo-foot-links{display:flex;gap:24px}
+.nevo-foot-links a{font:400 15px/1.5 'Inter',system-ui,sans-serif;color:#9c9184;opacity:.8;text-decoration:none}
+.nevo-foot-links a:hover{opacity:1}
+@media(max-width:640px){
+  .site-footer small{gap:12px}
+  .nevo-foot-copy{margin:0;font-size:13px}
+  .nevo-foot-links{width:100%;flex-wrap:wrap;gap:14px}
+  .nevo-foot-links a{font-size:13px}
+}
+
+/* ========================================================================
+   Login page (Figma node 1190:578)
+   ===================================================================== */
+.nevo-login[hidden]{display:none!important}
+.nevo-login{
+  position:relative;z-index:1;flex:1 0 auto;
+  width:100%;max-width:448px;margin:0 auto;
+  padding:var(--nevo-hero-top) 24px var(--nevo-section-y);
+}
+.nevo-login__back{
+  display:inline-flex;align-items:center;gap:10px;margin-bottom:24px;
+  font:700 14px/1.6 'Inter',system-ui,sans-serif;color:#6e6459;text-decoration:none;
+}
+.nevo-login__back:hover{color:#e2582a}
+.nevo-login__back svg{width:14px;height:14px;flex:none}
+
+.nevo-login__title-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.nevo-login__title{
+  margin:0;font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-weight:800;
+  font-size:var(--nevo-heading);line-height:1.25;letter-spacing:-.01em;color:#1c1917;
+}
+.nevo-login__badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#fff1ea;color:#b8431e;border-radius:999px;padding:4px 12px;
+  font:800 11px/1.15 'Inter',system-ui,sans-serif;letter-spacing:.055em;text-transform:uppercase;
+}
+.nevo-login__badge svg{width:11px;height:11px;flex:none}
+.nevo-login__sub{
+  margin:0 0 28px;max-width:40ch;
+  font:400 17px/1.6 'Inter',system-ui,sans-serif;color:#6e6459;
+}
+
+.nevo-country-list{display:flex;flex-direction:column;gap:16px}
+.nevo-country-form{margin:0}
+.nevo-country{
+  width:100%;display:flex;align-items:center;gap:16px;text-align:left;
+  background:#fff;border:1px solid #e7e0d6;border-radius:8px;padding:24px;cursor:pointer;
+  box-shadow:0 4px 20px -2px rgba(226,88,42,.05),0 0 3px 0 rgba(226,88,42,.02);
+  transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;
+}
+.nevo-country:hover{
+  border-color:#e2582a;transform:translateY(-1px);
+  box-shadow:0 12px 28px -8px rgba(226,88,42,.14);
+}
+.nevo-country:focus-visible{outline:2px solid #e2582a;outline-offset:2px}
+.nevo-country__flag{
+  flex:none;width:48px;height:48px;border-radius:999px;overflow:hidden;
+  background:#f7ece2;border:1px solid #f0eae0;box-shadow:0 1px 1px rgba(0,0,0,.05);
+  display:flex;align-items:center;justify-content:center;font-size:24px;line-height:1;
+}
+.nevo-country__flag img{width:32px;height:32px;object-fit:cover;border-radius:999px;display:block}
+.nevo-country__copy{flex:1;min-width:0}
+.nevo-country__name{display:block;font:700 14px/1.6 'Inter',system-ui,sans-serif;color:#1c1917}
+.nevo-country__meta{
+  display:flex;align-items:center;gap:6px;margin-top:2px;
+  font:400 13px/1.5 'Inter',system-ui,sans-serif;color:#6e6459;
+}
+.nevo-country__meta svg{width:12px;height:12px;flex:none;color:#9c9184}
+.nevo-country__arrow{
+  flex:none;width:32px;height:32px;border-radius:999px;background:#f3eee5;color:#6e6459;
+  display:flex;align-items:center;justify-content:center;transition:background .15s ease,color .15s ease;
+}
+.nevo-country__arrow svg{width:14px;height:14px}
+.nevo-country:hover .nevo-country__arrow{background:#e2582a;color:#fff}
+
+.nevo-login__help{
+  margin:28px 0 0;text-align:center;
+  font:400 13px/1.5 'Inter',system-ui,sans-serif;color:#9c9184;
+}
+.nevo-login__help a{color:#e2582a;text-decoration:none}
+.nevo-login__help a:hover{text-decoration:underline}
+
+/* ========================================================================
+   Login success page (Figma node 1192:945)
+   ===================================================================== */
+.nevo-success{
+  position:relative;z-index:1;flex:1 0 auto;display:none;
+  flex-direction:column;align-items:center;text-align:center;
+  width:100%;max-width:448px;margin:0 auto;
+  padding:var(--nevo-hero-top) 24px var(--nevo-section-y);
+}
+.nevo-success.is-active{display:flex}
+.nevo-success__icon{
+  flex:none;width:96px;height:96px;border-radius:999px;background:#2b844f;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 8px #fff,0 4px 6px 1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);
+}
+.nevo-success__icon svg{width:40px;height:40px;color:#fff}
+.nevo-success__title{
+  margin:32px 0 0;font-family:'Manrope','Segoe UI',system-ui,sans-serif;font-weight:800;
+  font-size:var(--nevo-heading);line-height:1.25;color:#1c1917;
+}
+.nevo-success__sub{margin:7px 0 0;font:400 17px/1.6 'Inter',system-ui,sans-serif;color:#6e6459}
+.nevo-success__identity{
+  margin-top:32px;width:100%;display:flex;align-items:center;gap:16px;text-align:left;
+  background:#fff;border:1px solid #e7e0d6;border-radius:12px;padding:25px;
+  box-shadow:0 1px 1px rgba(0,0,0,.05);
+}
+.nevo-success__avatar{
+  flex:none;width:48px;height:48px;border-radius:999px;border:1px solid #f0eae0;
+  background:#f7ece2;display:flex;align-items:center;justify-content:center;
+  font-size:22px;line-height:1;overflow:hidden;
+}
+.nevo-success__avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.nevo-success__identity strong{display:block;font:700 14px/1.6 'Inter',system-ui,sans-serif;color:#1c1917}
+.nevo-success__identity span{display:block;margin-top:2px;font:400 14px/1.43 'Inter',system-ui,sans-serif;color:#6e6459}
+.nevo-success__actions{margin-top:48px;width:100%;display:flex;flex-direction:column;gap:12px}
+.nevo-success__btn{
+  display:flex;align-items:center;justify-content:center;width:100%;
+  padding:11px 24px 12px;border-radius:999px;border:1px solid transparent;
+  font:700 14px/1.6 'Inter',system-ui,sans-serif;text-decoration:none;cursor:pointer;
+  transition:background .15s ease,border-color .15s ease,color .15s ease;
+}
+.nevo-success__btn--primary{background:#e2582a;color:#fff;box-shadow:0 1px 1px rgba(0,0,0,.05)}
+.nevo-success__btn--primary:hover{background:#c8491e}
+.nevo-success__btn--ghost{background:#fff;color:#1c1917;border-color:#e7e0d6}
+.nevo-success__btn--ghost:hover{border-color:#e2582a;color:#c8491e}
+
+@media(max-width:480px){
+  .nevo-country{padding:18px}
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="login-page">
+{% set selected_role = request.args.get('role', 'citizen') %}
+{% set role_label = {'citizen':'CITIZEN','mp':'MP / POLICYMAKER','planning_officer':'PLANNING OFFICER'}.get(selected_role, 'CITIZEN') %}
+{% set role_icon = {'citizen':'icon-people','mp':'icon-shield','planning_officer':'icon-building'}.get(selected_role, 'icon-people') %}
+{% set countries = [('IN','india.png','India'),('BR','brazil.png','Brazil'),('RU','russia.png','Russia')] %}
 
-  <div class="login-page__card">
-    <span class="login-page__badge">Demo sign-in</span>
-    <h1 class="login-page__heading">Choose a demo account</h1>
-    <p class="login-page__sub">
-      This hackathon build uses seeded identities instead of real accounts or
-      passwords — there's nothing to type here. Pick who you want to be, and
-      the app opens the screens that identity would actually see.
-    </p>
+<div class="nevo-bg" aria-hidden="true">
+  <img class="nevo-bg__left"  src="{{ url_for('static', filename='img/login.png') }}"  alt="">
+  <img class="nevo-bg__right" src="{{ url_for('static', filename='img/login2.png') }}" alt="">
+</div>
 
-    <div class="login-page__roles">
-      <div class="login-page__role">
-        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-megaphone"/></svg></span>
-        <div>
-          <strong>Citizen</strong>
-          <span>Report a problem, follow it to a decision</span>
-        </div>
-      </div>
-      <div class="login-page__role">
-        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-shield"/></svg></span>
-        <div>
-          <strong>MP</strong>
-          <span>Prioritise, defer or reject collective demand</span>
-        </div>
-      </div>
-      <div class="login-page__role">
-        <span class="login-page__role-icon"><svg width="18" height="18"><use href="#icon-building"/></svg></span>
-        <div>
-          <strong>Planning Officer</strong>
-          <span>Validate evidence, track projects &amp; outcomes</span>
-        </div>
-      </div>
+<!-- ===================== LOGIN PAGE (Figma frame 1) ===================== -->
+<div id="nevo-login-shell" class="nevo-login">
+  <a class="nevo-login__back" href="{{ url_for('role_select') }}">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M13 5l-7 7 7 7M6 12h13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Back to roles
+  </a>
+
+  <div class="nevo-login__title-row">
+    <h1 class="nevo-login__title">Continue as</h1>
+    <span class="nevo-login__badge">
+      <svg width="11" height="11" aria-hidden="true"><use href="#{{ role_icon }}"/></svg>
+      {{ role_label }}
+    </span>
+  </div>
+  <p class="nevo-login__sub">Select your region to access local civic tools and community resources.</p>
+
+  <div class="nevo-country-list">
+    {% for code, flag, country in countries %}
+      {% set actor = namespace(value=None) %}
+      {% for a in actors %}
+        {% if a.country_code == code and a.role == selected_role %}
+          {% set actor.value = a %}
+        {% endif %}
+      {% endfor %}
+      {% if actor.value %}
+      {% set actor_name = actor.value.name | replace(' (' ~ country ~ ')', '') %}
+      <form class="nevo-country-form" method="POST" action="{{ url_for('login_page') }}">
+        <input type="hidden" name="actor_id" value="{{ actor.value.id }}">
+        <button class="nevo-country" type="submit"
+                data-actor="{{ actor_name }}" data-country="{{ country }}"
+                data-role="{{ role_label | title }}">
+          <span class="nevo-country__flag">
+            <img src="{{ url_for('static', filename='img/' ~ flag) }}" alt="{{ country }} flag">
+          </span>
+          <span class="nevo-country__copy">
+            <span class="nevo-country__name">{{ country }}</span>
+            <span class="nevo-country__meta">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="2"/>
+                <path d="M5 20c1.2-3.6 4-5.2 7-5.2s5.8 1.6 7 5.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              Demo: {{ actor_name }}
+            </span>
+          </span>
+          <span class="nevo-country__arrow">
+            <svg width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+          </span>
+        </button>
+      </form>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <p class="nevo-login__help">Need help? <a href="{{ url_for('role_select') }}">Contact Support</a></p>
+</div>
+
+<!-- ================= LOGIN SUCCESS PAGE (Figma frame 2) ================= -->
+<div id="nevo-success" class="nevo-success">
+  <div class="nevo-success__icon">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check"/></svg>
+  </div>
+  <h2 class="nevo-success__title">You're signed in</h2>
+  <p class="nevo-success__sub">Welcome back to BRICS People First.</p>
+
+  <div class="nevo-success__identity">
+    <span class="nevo-success__avatar" id="nevo-success-avatar">
+      <img src="{{ url_for('static', filename='img/profile.png') }}" alt="">
+    </span>
+    <div>
+      <strong id="nevo-success-name">Demo identity</strong>
+      <span id="nevo-success-meta">{{ role_label | title }}</span>
     </div>
   </div>
 
-  <div class="login-page__credentials">
-    <h2 class="login-page__credentials-title">Demo credentials</h2>
-    <p class="login-page__credentials-hint">Grouped by country — pick any one to continue.</p>
-
-    <form method="POST" action="{{ url_for('login_page') }}">
-      <div class="role-select__groups">
-        {% set countries = [('IN', '🇮🇳 India'), ('BR', '🇧🇷 Brazil'), ('RU', '🇷🇺 Russia')] %}
-        {% for code, label in countries %}
-          <div class="role-group">
-            <h3 class="role-group__country">{{ label }}</h3>
-            {% for actor in actors %}
-              {% if actor.country_code == code %}
-                <label class="role-option {% if session.get('actor_id') == actor.id %}role-option--active{% endif %}">
-                  <input type="radio" name="actor_id" value="{{ actor.id }}"
-                    {% if session.get('actor_id') == actor.id %}checked{% endif %}>
-                  <span class="role-option__name">{{ actor.name }}</span>
-                  <span class="role-option__role">{{ actor.role | replace('_', ' ') | title }}</span>
-                </label>
-              {% endif %}
-            {% endfor %}
-          </div>
-        {% endfor %}
-      </div>
-
-      <button type="submit" class="btn btn--primary btn--large">Continue with this account</button>
-    </form>
-
-    <p class="login-page__back"><a href="{{ url_for('role_select') }}">&larr; Back to the overview</a></p>
+  <div class="nevo-success__actions">
+    <a id="nevo-success-go" class="nevo-success__btn nevo-success__btn--primary"
+       href="{{ url_for('citizen.home') }}">Go to Dashboard</a>
+    <a class="nevo-success__btn nevo-success__btn--ghost"
+       href="{{ url_for('role_select') }}">Start over</a>
   </div>
-
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // ---- footer nav links (Figma frame 1) — progressive enhancement -----
+  var foot = document.querySelector('.site-footer small');
+  if (foot) {
+    foot.insertAdjacentHTML('beforeend',
+      '<span class="nevo-foot-copy">© 2026 BRICS People First. Empowering civic resolution.</span>' +
+      '<nav class="nevo-foot-links">' +
+        '<a href="{{ url_for('role_select') }}">Privacy Policy</a>' +
+        '<a href="{{ url_for('role_select') }}">Terms of Service</a>' +
+        '<a href="{{ url_for('role_select') }}">Contact</a>' +
+      '</nav>');
+  }
+
+  // ---- login -> success screen — unchanged auth, restyled surface -----
+  var forms   = document.querySelectorAll('.nevo-country-form');
+  var shell   = document.getElementById('nevo-login-shell');
+  var success = document.getElementById('nevo-success');
+  var goBtn   = document.getElementById('nevo-success-go');
+  var nameEl  = document.getElementById('nevo-success-name');
+  var metaEl  = document.getElementById('nevo-success-meta');
+
+  forms.forEach(function (form) {
+    form.addEventListener('submit', async function (e) {
+      if (!window.fetch) return;                 // no fetch -> normal POST + server redirect
+      e.preventDefault();
+      var btn = form.querySelector('button');
+      btn.disabled = true;
+      try {
+        var response = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          credentials: 'same-origin',
+          redirect: 'follow'
+        });
+        if (!response.ok) throw new Error('login failed');
+
+        var tr = (window.NEVO_I18N && window.NEVO_I18N.t) || function (s) { return s; };
+        nameEl.textContent = btn.dataset.actor || tr('Demo identity');
+        metaEl.textContent = tr(btn.dataset.role) + ' · ' + tr(btn.dataset.country);
+        goBtn.href = response.url;                // real dashboard/home redirect target
+
+        shell.hidden = true;
+        var bg = document.querySelector('.nevo-bg');
+        if (bg) bg.hidden = true;               // Figma frame 2 uses a plain ground
+        success.classList.add('is-active');
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      } catch (err) {
+        form.submit();                            // fall back to the real server flow
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

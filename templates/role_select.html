@@ -1,74 +1,418 @@
 {% extends "base.html" %}
-{% block title %}BRICS People First — Individual Voice to Collective Demand{% endblock %}
+{% block title %}NEVO — From collective demand to visible outcome{% endblock %}
+
+{% block head %}
+<style>
+/* =========================================================================
+   NEVO landing / role-select — 1:1 recreation of the Figma frame
+   (node 1198:145).  All rules scoped to this page; base.html untouched.
+   ========================================================================= */
+
+/* ---- Shared header restyled to the Figma top bar ---------------------- */
+.site-header{
+  position:relative!important;top:auto!important;
+  background:rgba(255,255,255,.9)!important;
+  -webkit-backdrop-filter:blur(4px)!important;backdrop-filter:blur(4px)!important;
+  border-bottom:1px solid #f0eae0!important;
+  box-shadow:0 1px 2px rgba(0,0,0,.05)!important;
+}
+.site-header__inner{
+  max-width:1280px!important;margin:0 auto!important;
+  padding:0 clamp(20px,5vw,64px)!important;min-height:80px!important;gap:1rem!important;
+}
+.site-logo{gap:12px!important;align-items:center!important}
+.site-logo__mark{
+  width:44px!important;height:44px!important;border-radius:0!important;
+  background:transparent url("/static/img/nevo-logo.png") center/contain no-repeat!important;
+  flex-shrink:0!important;
+}
+.site-logo__mark svg{display:none!important}
+.site-logo__text{font-size:0!important;line-height:1!important}
+.site-logo__text::after{
+  content:"NEVO";font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-size:26px;font-weight:800;letter-spacing:-.01em;color:#1c1917;
+}
+.site-nav-primary{display:none!important}
+/* Landing header: the role cards below are the way in, so the demo-login link
+   is hidden here. The real language switcher (base.html) stays. */
+.site-header__account{display:none!important}
+.site-header__lang{
+  margin-left:auto!important;
+  padding:9px 15px!important;border:1px solid #e5e7eb!important;
+  border-radius:999px!important;box-shadow:0 1px 1px rgba(0,0,0,.05)!important;
+}
+.site-header__lang .lang-switch{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif!important;
+  font-size:14px!important;font-weight:500!important;color:#374151!important;
+}
+
+/* ---- Page shell ------------------------------------------------------- */
+.site-main{
+  max-width:none!important;margin:0!important;padding:0!important;background:#fbf8f3!important;
+  min-height:calc(100vh - 80px)!important;display:flex!important;flex-direction:column!important;
+}
+
+/* Fluid spacing scale — one rhythm that scales with the viewport instead
+   of fixed pixel jumps that read differently on 1366 / 1536 / 1920 screens. */
+:root{
+  --nevo-gutter:clamp(20px,5vw,64px);
+  --nevo-section-y:clamp(56px,7vw,104px);
+  --nevo-hero-top:clamp(48px,6vw,88px);
+}
+
+.nevo{
+  flex:1 0 auto;
+  max-width:1280px;margin:0 auto;padding:0 var(--nevo-gutter);
+  font-family:'Inter','Segoe UI',system-ui,sans-serif;color:#2b2620;
+}
+
+/* ---- HERO ----------------------------------------------------------- */
+.nevo-hero{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,532px);
+  gap:clamp(32px,4vw,56px);align-items:center;
+  padding:var(--nevo-hero-top) 0 var(--nevo-section-y);
+}
+.nevo-hero__eyebrow{
+  display:inline-block;background:#fff1ea;color:#b8431e;
+  font-size:11px;font-weight:700;letter-spacing:.99px;text-transform:uppercase;
+  padding:6px 12px;border-radius:999px;margin-bottom:24px;
+}
+.nevo-hero__title{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;color:#1c1917;
+  font-size:clamp(2.25rem,1.4rem + 2.6vw,3.5rem);line-height:1.1;letter-spacing:-.02em;
+  margin:0 0 24px;
+}
+.nevo-hero__title .accent{color:#e2582a}
+.nevo-hero__sub{
+  max-width:560px;margin:0 0 32px;color:#6e6459;
+  font-size:17px;line-height:1.6;
+}
+.nevo-hero__cta{display:flex;gap:16px;flex-wrap:wrap}
+.nevo-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  height:48px;padding:0 24px;border-radius:999px;
+  font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:14px;font-weight:700;
+  text-decoration:none;cursor:pointer;border:none;white-space:nowrap;
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease;
+}
+.nevo-btn svg{width:20px;height:20px;flex-shrink:0}
+.nevo-btn--primary{background:#e2582a;color:#fff;box-shadow:0 4px 7px rgba(226,88,42,.28)}
+.nevo-btn--primary:hover{background:#c8491e}
+.nevo-btn--ghost{background:#fff;color:#1c1917;border:1px solid #e7e0d6}
+.nevo-btn--ghost:hover{border-color:#e2582a;color:#c8491e}
+
+/* ---- Hero stats panel --------------------------------------------- */
+.nevo-panel{
+  position:relative;overflow:hidden;justify-self:end;
+  width:100%;max-width:532px;min-height:345px;border-radius:12px;background:#fff;
+  padding:32px;display:flex;
+  box-shadow:0 10px 15px -3px rgba(0,0,0,.1),0 4px 6px -4px rgba(0,0,0,.1);
+}
+.nevo-panel::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(58% 52% at 85% 12%,rgba(226,88,42,.22),rgba(226,88,42,0) 55%);
+}
+.nevo-panel__art{
+  position:absolute;right:-8px;bottom:0;height:88%;width:60%;
+  object-fit:contain;object-position:bottom right;opacity:.3;pointer-events:none;
+}
+.nevo-panel__body{position:relative;z-index:1;flex:1;display:flex;flex-direction:column}
+.nevo-panel__title{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;color:#0b0b0b;font-size:26px;line-height:1.25;margin:0 0 20px;
+}
+.nevo-panel__text{
+  max-width:340px;margin:0 0 auto;color:#1c1917;
+  font-size:15px;line-height:1.5;font-weight:500;
+}
+.nevo-panel__stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  margin-top:28px;padding-top:24px;border-top:1px solid rgba(28,25,23,.09);
+}
+.nevo-panel__stats b{
+  display:block;font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;font-size:26px;line-height:1.25;color:#0b0b0b;margin-bottom:4px;
+}
+.nevo-panel__stats span{display:block;font-size:11px;font-weight:700;color:#1c1917;line-height:1.15}
+
+/* ---- "Who are you signing in as?" -------------------------------- */
+.nevo-roles__head{max-width:768px;margin:0 auto;text-align:center}
+.nevo-roles__head h2{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;color:#1c1917;
+  font-size:clamp(2.25rem,1.4rem + 2.6vw,3.5rem);line-height:1.1;letter-spacing:-.02em;margin:0;
+  max-width:740px;margin-inline:auto;
+}
+.nevo-roles__head p{
+  max-width:672px;margin:24px auto 0;color:#6e6459;font-size:17px;line-height:1.6;
+}
+
+/* ---- Role cards -------------------------------------------------- */
+.nevo-roles{padding:0}
+.nevo-role-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:clamp(20px,2.4vw,32px);margin-top:clamp(40px,5vw,64px);
+}
+.nevo-role-card{
+  position:relative;display:flex;flex-direction:column;overflow:hidden;
+  background:#fff;border:1px solid #e7e0d6;border-radius:16px;
+  box-shadow:0 4px 20px -2px rgba(28,25,23,.05);
+  padding:32px;text-decoration:none;min-height:344px;
+  transition:transform .15s ease,box-shadow .15s ease;
+}
+.nevo-role-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px -4px rgba(28,25,23,.1)}
+.nevo-role-card__blob{
+  position:absolute;top:-64px;right:-66px;width:128px;height:128px;
+  border-radius:0 0 0 9999px;background:#eaf4fb;
+}
+.nevo-role-card--citizen .nevo-role-card__blob{background:rgba(29,111,164,.13)}
+.nevo-role-card__badge{
+  position:relative;z-index:2;width:64px;height:64px;border-radius:9999px;
+  background:#eaf4fb;display:flex;align-items:center;justify-content:center;
+  margin-bottom:24px;
+}
+.nevo-role-card__badge svg{width:26px;height:26px;color:#1d6fa4}
+.nevo-role-card__art{
+  position:absolute;top:6px;right:14px;width:200px;height:124px;
+  object-fit:contain;object-position:top right;pointer-events:none;
+  mix-blend-mode:multiply;
+}
+.nevo-role-card h3{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;font-size:26px;line-height:1.25;color:#1c1917;margin:0 0 8px;
+}
+.nevo-role-card p{
+  margin:0 0 24px;color:#6e6459;font-size:15px;line-height:1.5;flex:1;
+}
+.nevo-role-card__btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  height:46px;border-radius:999px;background:#1d6fa4;color:#fff;
+  font-size:14px;font-weight:700;
+  box-shadow:0 2px 5px rgba(29,111,164,.2);
+}
+.nevo-role-card__btn svg{width:12px;height:12px;flex-shrink:0}
+.nevo-role-card:hover .nevo-role-card__btn{background:#14547e}
+
+/* ---- Steps ----------------------------------------------------- */
+.nevo-steps{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(16px,2vw,24px);
+  padding:var(--nevo-section-y) 0;
+}
+.nevo-step{
+  position:relative;overflow:hidden;border-radius:8px;padding:24px;
+  background:#fff;border:1px solid transparent;min-height:247px;
+}
+.nevo-step--1{background:#fff1ea}
+.nevo-step--2{background:#fff;border-color:#e7e0d6}
+.nevo-step--3{background:#eaf4fb}
+.nevo-step--4{background:#fff8f4;border-color:#e7e0d6}
+.nevo-step--4::before{content:"";position:absolute;inset:0;background:#9df6b6;opacity:.1;pointer-events:none}
+.nevo-step__inner{position:relative;z-index:1}
+.nevo-step__icon{
+  width:40px;height:40px;border-radius:8px;background:#fff;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 1px rgba(0,0,0,.05);margin-bottom:31px;
+}
+.nevo-step--2 .nevo-step__icon{border:1px solid #f0eae0}
+.nevo-step__icon svg{display:block}
+.nevo-step__kicker{
+  font-size:11px;font-weight:700;letter-spacing:.99px;text-transform:uppercase;
+  color:#9c9184;margin-bottom:7px;
+}
+.nevo-step h3{
+  font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;font-size:18px;line-height:1.25;color:#1c1917;margin:0 0 9px;
+}
+.nevo-step p{margin:0;color:#6e6459;font-size:15px;line-height:1.5}
+
+/* ---- Shared footer restyled to the Figma dark bar --------------- */
+.site-footer{
+  margin:0!important;padding:0!important;background:#1c1917!important;
+  border:0!important;color:#9c9184!important;text-align:left!important;
+}
+.site-footer small{
+  display:flex;align-items:center;gap:18px;
+  max-width:1280px;margin:0 auto;padding:clamp(28px,3.5vw,44px) var(--nevo-gutter);
+  font-size:15px;line-height:1.5;color:#fbf8f3;letter-spacing:0;
+}
+.site-footer small::before{
+  content:"";flex-shrink:0;width:50px;height:44px;
+  background:left center/contain no-repeat url("/static/img/nevo-logo.png");
+}
+
+/* ---- Responsive — gutters/section rhythm come from the fluid tokens
+       above; these breakpoints only change what actually needs to reflow. */
+@media (max-width:1080px){
+  .nevo-steps{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:960px){
+  .nevo-hero{grid-template-columns:1fr;gap:clamp(28px,5vw,40px)}
+  .nevo-panel{justify-self:stretch;max-width:none}
+  .nevo-role-grid{grid-template-columns:1fr;gap:20px}
+  .nevo-role-card__art{width:170px;height:104px}
+}
+@media (max-width:640px){
+  .site-footer small{flex-wrap:wrap;font-size:13px}
+  .nevo-steps{grid-template-columns:1fr}
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="landing">
+<div class="nevo">
 
-  <section class="landing__hero">
-    <span class="home__eyebrow">India · Brazil · Russia</span>
-    <h1 class="landing__heading">From individual voice to collective demand to visible outcome</h1>
-    <p class="landing__sub">
-      Report a development problem in your own words. See whether your community
-      already asked for the same thing. Follow it all the way to a government
-      decision — and find out whether it actually got better.
-    </p>
-    <div class="landing__cta-row">
-      <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary btn--large">
-        <svg width="18" height="18"><use href="#icon-megaphone"/></svg>
-        Report a problem
-      </a>
-      <a href="{{ url_for('citizen.community') }}" class="btn btn--secondary btn--large">
-        See what your community needs
-      </a>
-    </div>
-  </section>
-
-  <section class="landing__steps">
-    <div class="landing__step">
-      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-mic"/></svg></span>
-      <h3>1. You report it</h3>
-      <p>Speak, type, or message it — in your own language. No government-style form.</p>
-    </div>
-    <div class="landing__step">
-      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-people"/></svg></span>
-      <h3>2. It becomes collective demand</h3>
-      <p>We find everyone else reporting the same need and show the real scale of it.</p>
-    </div>
-    <div class="landing__step">
-      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-building"/></svg></span>
-      <h3>3. Government reviews it</h3>
-      <p>Officials see the evidence and record a decision — with a reason you can read.</p>
-    </div>
-    <div class="landing__step">
-      <span class="landing__step-icon"><svg width="20" height="20"><use href="#icon-check"/></svg></span>
-      <h3>4. You see the outcome</h3>
-      <p>Track implementation and find out whether the original problem actually improved.</p>
-    </div>
-  </section>
-
-  <p class="landing__positioning">
-    This isn't another complaint box — existing systems already take complaints.
-    What's missing is visibility: seeing that your voice joined thousands of others,
-    and following it all the way to a decision and a result.
-  </p>
-
-  <section class="landing__demo-cta">
-    <div class="landing__demo-cta-inner">
-      <span class="landing__demo-cta-icon"><svg width="22" height="22"><use href="#icon-shield"/></svg></span>
-      <div>
-        <h2 class="landing__demo-cta-title">Want to see the government side, or your own report history?</h2>
-        <p class="landing__demo-cta-hint">
-          Reporting a problem and browsing the community map work immediately — no
-          account needed. Sign in with a seeded demo identity only if you want a
-          personal timeline, or want to see how an MP or Planning Officer reviews
-          collective demand.
-        </p>
+  <section class="nevo-hero">
+    <div class="nevo-hero__content">
+      <span class="nevo-hero__eyebrow">BRICS</span>
+      <h1 class="nevo-hero__title" data-i18n-html="hero.title">From<br><span class="accent">collective demand</span><br>to visible outcome.</h1>
+      <p class="nevo-hero__sub">
+        Report a development problem in your own words. See whether your community
+        already asked for the same thing. Follow it all the way to a government
+        decision — and find out whether it actually got better.
+      </p>
+      <div class="nevo-hero__cta">
+        <a href="{{ url_for('citizen.report_flow') }}" class="nevo-btn nevo-btn--primary">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M9 12h2V9h3V7h-3V4H9v3H6v2h3v3ZM0 20V2C0 1.45.196.98.588.588.98.196 1.45 0 2 0h16c.55 0 1.02.196 1.413.588.392.392.587.862.587 1.412v12c0 .55-.195 1.02-.587 1.413A1.926 1.926 0 0 1 18 16H4l-4 4Z" fill="currentColor"/>
+          </svg>
+          Report a problem
+        </a>
+        <a href="{{ url_for('citizen.community') }}" class="nevo-btn nevo-btn--ghost">
+          See what your community needs
+        </a>
       </div>
-      <a href="{{ url_for('login_page') }}" class="btn btn--secondary btn--large landing__demo-cta-btn">
-        Demo sign-in
-        <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+    </div>
+
+    <div class="nevo-panel">
+      <img class="nevo-panel__art" src="{{ url_for('static', filename='img/hero-civic.png') }}" alt="" aria-hidden="true">
+      <div class="nevo-panel__body">
+        <h2 class="nevo-panel__title">From individual voice to visible outcome</h2>
+        <p class="nevo-panel__text">
+          Every report is tracked from submission through community demand to government decision.
+        </p>
+        <div class="nevo-panel__stats">
+          <div><b>3</b><span>Countries live</span></div>
+          <div><b>6</b><span>Issue categories</span></div>
+          <div><b>8</b><span>Timeline stages tracked</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="nevo-roles">
+    <div class="nevo-roles__head">
+      <h2>Who are you signing in as?</h2>
+      <p>
+        Select your role to access customized tools and dashboards tailored to your
+        civic responsibilities and community engagement needs.
+      </p>
+    </div>
+
+    <div class="nevo-role-grid">
+      <a class="nevo-role-card nevo-role-card--citizen" href="{{ url_for('login_page', role='citizen') }}">
+        <span class="nevo-role-card__blob"></span>
+        <img class="nevo-role-card__art" src="{{ url_for('static', filename='img/role-citizen.png') }}" alt="">
+        <span class="nevo-role-card__badge">
+          <svg viewBox="0 0 25 20" fill="none" aria-hidden="true">
+            <path d="M20 11.25V8.75h5v2.5h-5ZM21.5 20l-4-3 1.5-2 4 3-1.5 2ZM19 5l-1.5-2 4-3L23 2l-4 3ZM3.75 18.75v-5H2.5c-.688 0-1.276-.245-1.766-.734C.245 12.526 0 11.938 0 11.25v-2.5c0-.688.245-1.276.734-1.766C1.224 6.245 1.813 6 2.5 6h5l6.25-3.75v15L7.5 13.75H6.25v5H3.75ZM15 14.188V5.812c.563.5 1.016 1.11 1.36 1.829.343.718.515 1.505.515 2.359 0 .854-.172 1.64-.516 2.36-.344.718-.797 1.327-1.359 1.827Z" fill="currentColor"/>
+          </svg>
+        </span>
+        <h3>Citizen</h3>
+        <p>Report local issues, track infrastructure progress, and engage directly with your community representatives.</p>
+        <span class="nevo-role-card__btn">
+          Continue as Citizen
+          <svg viewBox="0 0 9.34 9.34" fill="none" aria-hidden="true"><path d="M7.102 5.25H0V4.083h7.102L3.835.817 4.667 0l4.666 4.667-4.666 4.666-.832-.816 3.267-3.267Z" fill="currentColor"/></svg>
+        </span>
+      </a>
+
+      <a class="nevo-role-card nevo-role-card--mp" href="{{ url_for('login_page', role='mp') }}">
+        <span class="nevo-role-card__blob"></span>
+        <img class="nevo-role-card__art" src="{{ url_for('static', filename='img/role-mp.png') }}" alt="">
+        <span class="nevo-role-card__badge">
+          <svg viewBox="0 0 20 25" fill="none" aria-hidden="true">
+            <path d="M10 25c-2.896-.73-5.286-2.39-7.172-4.984C.943 17.422 0 14.542 0 11.375V3.75L10 0l10 3.75v7.625c0 3.167-.943 6.047-2.828 8.641C15.286 22.61 12.896 24.27 10 25Z" fill="currentColor"/>
+          </svg>
+        </span>
+        <h3>MP / Policymaker</h3>
+        <p>Review citizen demands, allocate resources, and communicate transparently with your constituency.</p>
+        <span class="nevo-role-card__btn">
+          Continue as MP
+          <svg viewBox="0 0 9.34 9.34" fill="none" aria-hidden="true"><path d="M7.102 5.25H0V4.083h7.102L3.835.817 4.667 0l4.666 4.667-4.666 4.666-.832-.816 3.267-3.267Z" fill="currentColor"/></svg>
+        </span>
+      </a>
+
+      <a class="nevo-role-card nevo-role-card--officer" href="{{ url_for('login_page', role='planning_officer') }}">
+        <span class="nevo-role-card__blob"></span>
+        <img class="nevo-role-card__art" src="{{ url_for('static', filename='img/role-officer.png') }}" alt="">
+        <span class="nevo-role-card__badge">
+          <svg viewBox="0 0 25 22.5" fill="none" aria-hidden="true">
+            <path d="M0 22.5V0h12.5v5H25v17.5H0ZM2.5 20H5v-2.5H2.5V20Zm0-5H5v-2.5H2.5V15Zm0-5H5V7.5H2.5V10Zm0-5H5V2.5H2.5V5Zm5 15H10v-2.5H7.5V20Zm0-5H10v-2.5H7.5V15Zm0-5H10V7.5H7.5V10Zm0-5H10V2.5H7.5V5Zm5 15h10V7.5h-10V10H15v2.5h-2.5V15H15v2.5h-2.5V20Zm5-7.5V10H20v2.5h-2.5Zm0 5V15H20v2.5h-2.5Z" fill="currentColor"/>
+          </svg>
+        </span>
+        <h3>Planning Officer</h3>
+        <p>Manage infrastructure projects, evaluate technical feasibility, and update project milestones.</p>
+        <span class="nevo-role-card__btn">
+          Continue as Officer
+          <svg viewBox="0 0 9.34 9.34" fill="none" aria-hidden="true"><path d="M7.102 5.25H0V4.083h7.102L3.835.817 4.667 0l4.666 4.667-4.666 4.666-.832-.816 3.267-3.267Z" fill="currentColor"/></svg>
+        </span>
       </a>
     </div>
   </section>
+
+  <section class="nevo-steps">
+    <div class="nevo-step nevo-step--1">
+      <div class="nevo-step__inner">
+        <div class="nevo-step__icon">
+          <svg width="14" height="19" viewBox="0 0 14 19" fill="none" aria-hidden="true">
+            <path d="M7 12c-.833 0-1.542-.292-2.125-.875C4.292 10.542 4 9.833 4 9V3c0-.833.292-1.542.875-2.125C5.458.292 6.167 0 7 0s1.542.292 2.125.875C9.708 1.458 10 2.167 10 3v6c0 .833-.292 1.542-.875 2.125C8.542 11.708 7.833 12 7 12ZM6 19v-3.075c-1.733-.233-3.167-1.008-4.3-2.325C.567 12.283 0 10.75 0 9h2c0 1.383.488 2.563 1.463 3.538C4.437 13.513 5.617 14 7 14s2.563-.487 3.538-1.462C11.512 11.563 12 10.383 12 9h2c0 1.75-.567 3.283-1.7 4.6-1.133 1.317-2.567 2.092-4.3 2.325V19H6Z" fill="#B8431E"/>
+          </svg>
+        </div>
+        <div class="nevo-step__kicker">Step 1</div>
+        <h3>You report it</h3>
+        <p>Speak, type, or message it — in your own language. No government-style form.</p>
+      </div>
+    </div>
+
+    <div class="nevo-step nevo-step--2">
+      <div class="nevo-step__inner">
+        <div class="nevo-step__icon">
+          <svg width="22" height="16" viewBox="0 0 22 16" fill="none" aria-hidden="true">
+            <path d="M0 16v-2.8c0-.567.146-1.088.438-1.563.291-.475.679-.837 1.162-1.087a12.435 12.435 0 0 1 3.15-1.163A13.61 13.61 0 0 1 8 9c1.1 0 2.183.129 3.25.387 1.067.259 2.117.646 3.15 1.163.483.25.87.612 1.163 1.087.291.475.437.996.437 1.563V16H0Zm18 0v-3c0-.733-.204-1.437-.613-2.113-.408-.675-.987-1.254-1.737-1.737a11.7 11.7 0 0 1 2.4.5c.75.242 1.45.538 2.1.888.6.333 1.058.704 1.375 1.112.317.409.475.855.475 1.338V16h-4ZM8 8c-1.1 0-2.042-.392-2.825-1.175C4.392 6.042 4 5.1 4 4c0-1.1.392-2.042 1.175-2.825C5.958.392 6.9 0 8 0s2.042.392 2.825 1.175C11.608 1.958 12 2.9 12 4c0 1.1-.392 2.042-1.175 2.825C10.042 7.608 9.1 8 8 8Zm10-4c0 1.1-.392 2.042-1.175 2.825C16.042 7.608 15.1 8 14 8c-.183 0-.417-.021-.7-.063a5.607 5.607 0 0 1-.7-.137c.45-.533.796-1.125 1.038-1.775A6.03 6.03 0 0 0 14 4a6.03 6.03 0 0 0-.362-2.025A5.888 5.888 0 0 0 12.6.2c.233-.083.467-.137.7-.162.233-.025.467-.038.7-.038 1.1 0 2.042.392 2.825 1.175C17.608 1.958 18 2.9 18 4Z" fill="#B8431E"/>
+          </svg>
+        </div>
+        <div class="nevo-step__kicker">Step 2</div>
+        <h3>It becomes collective demand</h3>
+        <p>We find everyone else reporting the same need and show the real scale of it.</p>
+      </div>
+    </div>
+
+    <div class="nevo-step nevo-step--3">
+      <div class="nevo-step__inner">
+        <div class="nevo-step__icon">
+          <svg width="18" height="19" viewBox="0 0 18 19" fill="none" aria-hidden="true">
+            <path d="M0 19v-2h12v2H0Zm5.65-4.85L0 8.5l2.1-2.15 5.7 5.65-2.15 2.15ZM12 7.8 6.35 2.1 8.5 0l5.65 5.65L12 7.8ZM16.6 18 3.55 4.95l1.4-1.4L18 16.6 16.6 18Z" fill="#14547E"/>
+          </svg>
+        </div>
+        <div class="nevo-step__kicker">Step 3</div>
+        <h3>Government reviews it</h3>
+        <p>Officials see the evidence and record a decision — with a reason you can read.</p>
+      </div>
+    </div>
+
+    <div class="nevo-step nevo-step--4">
+      <div class="nevo-step__inner">
+        <div class="nevo-step__icon">
+          <svg width="22" height="13" viewBox="0 0 21.9 12.025" fill="none" aria-hidden="true">
+            <path d="m5.65 12.025-5.65-5.65 1.425-1.4 4.25 4.25 1.4 1.4-1.425 1.4Zm5.65 0-5.65-5.65 1.4-1.425 4.25 4.25 9.2-9.2 1.4 1.425-10.6 10.6Zm0-5.65-1.425-1.4 4.95-4.95 1.425 1.4-4.95 4.95Z" fill="#006A38"/>
+          </svg>
+        </div>
+        <div class="nevo-step__kicker">Step 4</div>
+        <h3>You see the outcome</h3>
+        <p>Track implementation and find out whether the original problem actually improved.</p>
+      </div>
+    </div>
+  </section>
+
 </div>
 {% endblock %}

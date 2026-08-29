@@ -138,6 +138,21 @@ a { color: inherit; }
 }
 .nav-link-switch:hover { color: var(--color-accent-dark); border-color: var(--color-accent); }
 
+/* Language switcher — shown on every page via base.html */
+.site-header__lang {
+  display: inline-flex; align-items: center; gap: 0.35rem; flex-shrink: 0;
+  padding: 0.28rem 0.55rem 0.28rem 0.6rem; border-radius: 999px;
+  border: 1px solid var(--color-border); background: #fff;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+}
+.site-header__lang-icon { display: inline-flex; color: var(--color-muted); }
+.lang-switch {
+  border: 0; background: transparent; outline: none; cursor: pointer;
+  font-family: inherit; font-size: 0.8rem; font-weight: 600; color: var(--color-ink);
+  padding: 0 0.2rem; -webkit-appearance: none; appearance: none;
+}
+.lang-switch:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; border-radius: 4px; }
+
 @media (min-width: 860px) {
   .site-nav-primary { order: 2; width: auto; justify-content: center; }
 }
