@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Admin — NEVO{% endblock %}
+
+{% block content %}
+<div class="admin-panel">
+  <h1>Platform configuration</h1>
+  <p class="admin-panel__note">Technical configuration only — no policy authority.</p>
+
+  <section class="admin-section">
+    <h2>Countries</h2>
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Name</th><th>Languages</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for c in countries %}
+          <tr>
+            <td>{{ c.code }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.supported_languages }}</td>
+            <td>{{ c.status }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Categories</h2>
+    <table class="admin-table">
+      <thead><tr><th>Code</th><th>Name</th></tr></thead>
+      <tbody>
+        {% for cat in categories %}
+          <tr><td>{{ cat.code }}</td><td>{{ cat.name }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="admin-section">
+    <h2>Government accounts</h2>
+    <p class="admin-panel__note">
+      <a href="{{ url_for('auth.provision_government_account') }}" class="btn btn--secondary btn--small">+ Create account</a>
+    </p>
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Region</th><th>Department</th><th>Active</th></tr></thead>
+      <tbody>
+        {% for a in accounts %}
+          <tr>
+            <td><code>{{ a.email }}</code></td>
+            <td>{{ a.full_name }}</td>
+            <td>{{ a.role | replace('_', ' ') | title }}</td>
+            <td>{{ a.region.name if a.region else "— national —" }}</td>
+            <td>{{ a.department.name if a.department else "—" }}</td>
+            <td>{{ "Yes" if a.is_active else "No" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

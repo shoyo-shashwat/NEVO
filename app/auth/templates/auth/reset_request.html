@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Reset password — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Reset your password</h1>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Email</label>
+      {{ form.email(class_="report-flow__location-input") }}
+    </div>
+    <button type="submit" class="btn btn--primary btn--large">Send reset link</button>
+  </form>
+</div>
+{% endblock %}

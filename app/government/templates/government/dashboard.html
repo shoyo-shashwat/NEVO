@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — NEVO{% endblock %}
+
+{% block content %}
+<div class="gov-dashboard">
+  {% if mode == "implementation" %}
+    <h1>What needs implementation follow-up</h1>
+    <p class="dashboard__country">
+      <svg width="15" height="15"><use href="#icon-building"/></svg>
+      {{ country_code }} · where investment is missing, and what's already under way
+    </p>
+  {% else %}
+    <h1>What needs your decision</h1>
+    <p class="dashboard__country">
+      <svg width="15" height="15"><use href="#icon-building"/></svg>
+      {{ country_code }} · ranked by real evidence — prioritise, defer, or reject
+    </p>
+  {% endif %}
+  {% if read_only %}
+    <p class="report-flow__hint">Your role ({{ role | replace('_',' ') | title }}) can review this evidence but not act on it.</p>
+  {% endif %}
+
+  <div class="dashboard-stats" style="display:flex; gap:1rem; flex-wrap:wrap; margin: 1.25rem 0 1.75rem;">
+    <div class="timeline-item" style="flex:1; min-width:140px; padding:1rem;">
+      <div style="font-size:1.6rem; font-weight:800;">{{ stat_active_signals }}</div>
+      <div style="font-size:0.82rem; color:var(--color-muted);">Active signals</div>
+    </div>
+    <div class="timeline-item" style="flex:1; min-width:140px; padding:1rem; {% if stat_critical_priority %}background:var(--color-p-critical-bg);{% endif %}">
+      <div style="font-size:1.6rem; font-weight:800;">{{ stat_critical_priority }}</div>
+      <div style="font-size:0.82rem; color:var(--color-muted);">Critical priority</div>
+    </div>
+    <div class="timeline-item" style="flex:1; min-width:140px; padding:1rem;">
+      <div style="font-size:1.6rem; font-weight:800;">{{ stat_awaiting_decision }}</div>
+      <div style="font-size:0.82rem; color:var(--color-muted);">Awaiting decision</div>
+    </div>
+    <div class="timeline-item" style="flex:1; min-width:140px; padding:1rem;">
+      <div style="font-size:1.6rem; font-weight:800;">{{ stat_decisions_recorded }}</div>
+      <div style="font-size:0.82rem; color:var(--color-muted);">Decisions recorded (all time)</div>
+    </div>
+  </div>
+
+  {# --- Top Priorities: ranked by real Stage 1/2 priority score, not just trend --- #}
+  {% if top_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-chart"/></svg> Top priorities</h2>
+    {% for card in top_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- Emerging Gaps: rapidly increasing demand --- #}
+  {% if emerging_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-chart"/></svg> Emerging gaps</h2>
+    {% for card in emerging_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- Investment / Intervention Gaps: unaddressed, partial, or access-gap alignment --- #}
+  {% if investment_gap_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-building"/></svg> Investment &amp; intervention gaps</h2>
+    {% for card in investment_gap_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- Decisions Awaiting Review --- #}
+  {% if pending_cards %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-clock"/></svg> Awaiting your decision</h2>
+    {% for card in pending_cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if not top_cards and not emerging_cards and not investment_gap_cards and not pending_cards %}
+    <p class="empty-state">No active demand signals for your area yet.</p>
+  {% endif %}
+
+  {% if your_projects %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-clock"/></svg> Your projects in progress</h2>
+    {% for p in your_projects %}
+      <div class="timeline-item" style="display:flex; justify-content:space-between; align-items:center;">
+        <strong>{{ p.name }}</strong>
+        <span>
+          <span class="cluster-card__status">{{ p.status }}</span>
+          <a href="{{ url_for('government.projects_outcomes') }}">Open →</a>
+        </span>
+      </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}

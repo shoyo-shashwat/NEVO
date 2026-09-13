@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Your report — NEVO{% endblock %}
+
+{% block content %}
+<div class="demand-result">
+
+  {% if match_tier == "auto_suggest" and clusters %}
+    {# High confidence — one clear "join" action #}
+    {% set top = clusters[0] %}
+    <h1>A similar community issue already exists</h1>
+    <div class="cluster-card cluster-card--highlight">
+      <p class="cluster-card__category">{{ top.category_name }}</p>
+      <p class="cluster-card__stats">
+        {{ top.unique_contributors }} people · {{ top.cluster.affected_localities | join(', ') }}
+      </p>
+      <p class="cluster-card__match">{{ top.similarity }}% match</p>
+
+      <form method="POST" enctype="multipart/form-data" class="demand-result__actions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="cluster_id" value="{{ top.cluster.id }}">
+        <button name="action" value="join" class="btn btn--primary">Join this issue</button>
+        <button name="action" value="start_new" class="btn btn--secondary">Not the same — start new</button>
+        <div class="demand-result__evidence">
+          <label for="evidence-photo-top">
+            <svg width="14" height="14" style="vertical-align:-2px;"><use href="#icon-camera"/></svg>
+            Have a photo of this? <span class="report-flow__optional">(optional)</span>
+          </label>
+          <input type="file" name="evidence_photo" id="evidence-photo-top" accept="image/*">
+          <button name="action" value="add_evidence" class="btn btn--tiny">Add evidence &amp; join</button>
+        </div>
+      </form>
+    </div>
+
+  {% elif match_tier == "show_candidates" and clusters %}
+    {# Medium confidence — list up to 3, citizen picks #}
+    <h1>Similar issues found nearby</h1>
+    <p>Which of these matches what you reported?</p>
+
+    {% for item in clusters %}
+      <div class="cluster-card">
+        <p class="cluster-card__category">{{ item.category_name }}</p>
+        <p class="cluster-card__stats">
+          {{ item.unique_contributors }} people · {{ item.cluster.affected_localities | join(', ') }}
+        </p>
+        <p class="cluster-card__match">{{ item.similarity }}% match</p>
+        <form method="POST" enctype="multipart/form-data" class="demand-result__actions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="cluster_id" value="{{ item.cluster.id }}">
+          <button name="action" value="join" class="btn btn--primary btn--small">This one</button>
+          <div class="demand-result__evidence">
+            <input type="file" name="evidence_photo" id="evidence-photo-{{ loop.index }}" accept="image/*">
+            <button name="action" value="add_evidence" class="btn btn--tiny">Add evidence &amp; join</button>
+          </div>
+        </form>
+      </div>
+    {% endfor %}
+
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button name="action" value="start_new" class="btn btn--secondary">None of these — start new</button>
+    </form>
+
+  {% else %}
+    {# No match — explicit start new only, no silent auto-create #}
+    <h1>No existing issue found</h1>
+    <p>Your report will start a new community issue.</p>
+    <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button name="action" value="start_new" class="btn btn--primary">Start community issue</button>
+    </form>
+  {% endif %}
+
+</div>
+{% endblock %}

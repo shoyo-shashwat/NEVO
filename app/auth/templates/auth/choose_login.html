@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow" style="text-align:center;">
+  <h1 class="report-flow__heading">Sign in to NEVO</h1>
+  <p class="report-flow__hint">Choose how you'd like to continue.</p>
+  <div style="display:flex; flex-direction:column; gap:0.8rem; max-width:320px; margin:1.5rem auto 0;">
+    <a href="{{ url_for('auth.citizen_login') }}" class="btn btn--primary btn--large">I'm a citizen</a>
+    <a href="{{ url_for('auth.citizen_signup') }}" class="btn btn--secondary">Create a citizen account</a>
+    <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--secondary">Continue without an account</a>
+    <a href="{{ url_for('auth.government_login') }}" class="btn btn--secondary" style="margin-top:1rem;">Government official sign in</a>
+  </div>
+</div>
+{% endblock %}

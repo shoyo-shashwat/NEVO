@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Decision — NEVO{% endblock %}
+
+{% block content %}
+<div class="decision-workspace">
+  <h1>Record decision</h1>
+  <p class="decision-workspace__cluster">
+    {{ cluster.affected_localities | join(' · ') }}
+    {% if category %} · {{ category.name }}{% endif %}
+  </p>
+
+  {% if existing_decision %}
+    <div class="decision-workspace__existing">
+      <strong>Previous decision:</strong>
+      {{ existing_decision.decision_type }} — {{ existing_decision.reason }}
+    </div>
+  {% endif %}
+
+  <form method="POST">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    {# Action set differs by role and current workflow state #}
+    <fieldset class="decision-options">
+      <legend>Your decision</legend>
+
+      {% if role in ('national_admin', 'state_admin', 'district_officer') %}
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Prioritize" required>
+          Prioritise / Recommend action
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Defer">
+          Defer
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Deprioritize">
+          Deprioritise / Reject
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="NeedsValidation">
+          Request validation
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Redirected">
+          Redirect to another authority
+        </label>
+
+      {% elif role == 'department_officer' %}
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="NeedsValidation" required>
+          Validate evidence
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Prioritize">
+          Propose for action
+        </label>
+        <label class="decision-option">
+          <input type="radio" name="decision_type" value="Redirected">
+          Redirect
+        </label>
+      {% else %}
+        <p class="report-flow__hint">
+          Your role ({{ role | replace('_',' ') | title }}) is evidence-side only —
+          you can review this cluster's evidence but cannot record a decision.
+        </p>
+      {% endif %}
+    </fieldset>
+
+    {% if role in ('national_admin', 'state_admin', 'district_officer', 'department_officer') %}
+    {#
+      Reason — human-authored only.
+      This textarea is the ONLY permitted source for GovernmentDecision.reason.
+      No AI-generated text may pre-populate or override this field.
+    #}
+    <div class="decision-reason">
+      <label for="reason">
+        Reason <span class="required">*</span>
+        <span class="decision-reason__note">(your words — required)</span>
+      </label>
+      <textarea
+        id="reason"
+        name="reason"
+        rows="4"
+        required
+        placeholder="Explain the reason for this decision…"
+      ></textarea>
+    </div>
+
+    {# Link to an existing project (optional) #}
+    {% if projects %}
+    <div class="decision-link-project">
+      <label for="linked_project_id">Link to existing project (optional)</label>
+      <select name="linked_project_id" id="linked_project_id">
+        <option value="">— none —</option>
+        {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }} ({{ p.status }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="decision-workspace__actions">
+      <button type="submit" class="btn btn--primary">Record decision</button>
+      <a href="{{ url_for('government.evidence_detail', cluster_id=cluster.id) }}"
+         class="btn btn--secondary">Cancel</a>
+    </div>
+    {% endif %}
+
+  </form>
+
+  {% if role in ('national_admin', 'state_admin', 'district_officer', 'department_officer') %}
+  {# Propose a new project/intervention for this demand — Government §3
+     "Propose an action/project candidate". Separate form: creating a
+     project is independent of recording a decision above. #}
+  <div class="decision-propose-project">
+    <h2>Propose a project</h2>
+    <p class="decision-propose-project__hint">
+      No suitable existing project? Start one and link it to this demand.
+    </p>
+    <form method="POST" action="{{ url_for('government.propose_project', cluster_id=cluster.id) }}"
+          class="propose-project-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="project_name">Project name</label>
+      <input type="text" name="project_name" id="project_name" required
+             placeholder="e.g. Nashik Rural PHC Upgradation">
+      <label for="expected_completion">Expected completion (optional)</label>
+      <input type="date" name="expected_completion" id="expected_completion">
+      <button type="submit" class="btn btn--secondary">Create &amp; link project</button>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

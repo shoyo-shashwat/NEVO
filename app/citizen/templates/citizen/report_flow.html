@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Report a problem — NEVO{% endblock %}
+
+{% block content %}
+<div class="report-flow">
+
+  {% if clarification %}
+    <div class="report-flow__clarification">
+      <p class="report-flow__ai-q">{{ clarification }}</p>
+      {% if complaint_id %}
+        <p class="report-flow__hint" style="margin-top:0.5rem;">
+          Reference so far: <strong>{{ complaint_id }}</strong>
+        </p>
+      {% endif %}
+    </div>
+  {% else %}
+    <h1 class="report-flow__heading">What's the problem?</h1>
+    <p class="report-flow__hint">Describe it in your own words — voice or text.</p>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('citizen.report_flow') }}"
+        enctype="multipart/form-data" id="report-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <input type="hidden" name="channel" id="channel-input" value="text">
+    <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
+    <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
+
+    {# Main input — voice fills this via Web Speech API, text typed directly #}
+    <textarea
+      name="text_input"
+      id="text-input"
+      class="report-flow__textarea"
+      rows="4"
+      placeholder="e.g. There is no clean water in our area for the past two months…"
+      autofocus
+    >{{ partial_text or '' }}</textarea>
+
+    {# Voice button — uses Web Speech API to type into the textarea live #}
+    <div class="report-flow__voice">
+      <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
+        <svg width="16" height="16"><use href="#icon-mic"/></svg>
+        Speak
+      </button>
+      <span id="mic-status" class="report-flow__mic-status"></span>
+    </div>
+
+    {# Location — GPS (automatic) or manual state/district selection.
+       Manual selection is authoritative when used (Phase 0 §2). #}
+    <div class="report-flow__location">
+      <label class="report-flow__location-label">Location</label>
+
+      <div style="display:flex; gap:1.5rem; margin-bottom:0.6rem; font-size:0.88rem;">
+        <label style="display:flex; align-items:center; gap:0.35rem; font-weight:500;">
+          <input type="radio" name="location_mode" value="gps" checked> Use my current location
+        </label>
+        <label style="display:flex; align-items:center; gap:0.35rem; font-weight:500;">
+          <input type="radio" name="location_mode" value="manual"> Choose state / district
+        </label>
+      </div>
+
+      <p id="geo-status" class="report-flow__geo-status" style="font-size:0.8rem;color:var(--color-muted);"></p>
+
+      <div id="manual-location" style="display:none; gap:0.6rem; margin-top:0.5rem;">
+        <select id="state-select" class="report-flow__location-input" style="margin-bottom:0.5rem;">
+          <option value="">Select state…</option>
+          {% for state in states %}
+            <option value="{{ state.id }}">{{ state.name }}</option>
+          {% endfor %}
+        </select>
+        <select id="district-select" name="manual_region_id" class="report-flow__location-input" disabled>
+          <option value="">Select district…</option>
+        </select>
+      </div>
+
+      <label for="location-hint" class="report-flow__location-label" style="margin-top:0.75rem;">
+        Neighbourhood / locality <span class="report-flow__optional">(optional)</span>
+      </label>
+      <input
+        type="text"
+        name="location_hint"
+        id="location-hint"
+        class="report-flow__location-input"
+        placeholder="e.g. Ward 12, Sinnar Block…"
+        value="{{ location_hint or '' }}"
+      >
+    </div>
+
+    {# Evidence — photos, multiple attachments supported. #}
+    <div class="report-flow__evidence">
+      <label for="evidence-files" class="report-flow__evidence-label">
+        <svg width="15" height="15" style="vertical-align:-2px;margin-right:2px;"><use href="#icon-camera"/></svg>
+        Add photos <span class="report-flow__optional">(optional, multiple allowed)</span>
+      </label>
+      <input type="file" name="evidence_files" id="evidence-files" accept="image/*" multiple>
+    </div>
+
+    {% if needs_consent %}
+      <div style="margin: 1.1rem 0; padding: 0.85rem 1rem; background: var(--color-bg-alt); border-radius: var(--radius-sm); font-size: 0.88rem;">
+        <label style="display:flex; align-items:flex-start; gap:0.5rem;">
+          <input type="checkbox" name="consent" required style="margin-top:3px;">
+          <span>I consent to NEVO storing and processing this report to route it to the
+          relevant government authority. <a href="#" style="color:var(--color-accent-dark);">Privacy details</a>.
+          <br><span class="report-flow__optional">Creating an account is optional — you can still track this report by its reference ID.</span></span>
+        </label>
+      </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn--primary btn--large">Submit report</button>
+  </form>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// GPS location capture — non-blocking, fills hidden lat/lng fields.
+(function () {
+  var latInput = document.getElementById('latitude-input');
+  var lngInput = document.getElementById('longitude-input');
+  var geoStatus = document.getElementById('geo-status');
+  var manualBox = document.getElementById('manual-location');
+  var radios = document.querySelectorAll('input[name="location_mode"]');
+  var stateSelect = document.getElementById('state-select');
+  var districtSelect = document.getElementById('district-select');
+
+  function detectGps() {
+    if (!navigator.geolocation) { return; }
+    geoStatus.textContent = 'Detecting your location…';
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        latInput.value = pos.coords.latitude;
+        lngInput.value = pos.coords.longitude;
+        geoStatus.textContent = 'Location detected ✓';
+      },
+      function () { geoStatus.textContent = 'Could not detect location — try "Choose state / district" instead.'; },
+      { timeout: 8000, maximumAge: 60000 }
+    );
+  }
+
+  radios.forEach(function (r) {
+    r.addEventListener('change', function () {
+      if (r.value === 'manual' && r.checked) {
+        manualBox.style.display = 'flex';
+        manualBox.style.flexDirection = 'column';
+        latInput.value = ''; lngInput.value = ''; geoStatus.textContent = '';
+      } else if (r.value === 'gps' && r.checked) {
+        manualBox.style.display = 'none';
+        districtSelect.value = '';
+        detectGps();
+      }
+    });
+  });
+
+  stateSelect.addEventListener('change', function () {
+    districtSelect.innerHTML = '<option value="">Loading…</option>';
+    districtSelect.disabled = true;
+    if (!stateSelect.value) {
+      districtSelect.innerHTML = '<option value="">Select district…</option>';
+      return;
+    }
+    fetch('/citizen/regions/' + stateSelect.value + '/children')
+      .then(function (r) { return r.json(); })
+      .then(function (children) {
+        var opts = '<option value="">Select district…</option>';
+        children.forEach(function (c) { opts += '<option value="' + c.id + '">' + c.name + '</option>'; });
+        districtSelect.innerHTML = opts;
+        districtSelect.disabled = false;
+      })
+      .catch(function () { districtSelect.innerHTML = '<option value="">Could not load districts</option>'; });
+  });
+
+  detectGps();
+}());
+
+// Web Speech API — types words directly into the textarea as the citizen speaks.
+(function () {
+  var micBtn = document.getElementById('mic-btn');
+  var micStatus = document.getElementById('mic-status');
+  var textInput = document.getElementById('text-input');
+
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    micBtn.style.display = 'none';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  var isRecording = false;
+  var baseText = '';
+
+  recognition.onresult = function (event) {
+    var interim = '';
+    var final = '';
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      var transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        final += transcript + ' ';
+      } else {
+        interim += transcript;
+      }
+    }
+    if (final) baseText += final;
+    textInput.value = baseText + interim;
+  };
+
+  var MIC_LABEL_IDLE = '<svg width="16" height="16"><use href="#icon-mic"></use></svg> Speak';
+  var MIC_LABEL_RECORDING = '⏹ Stop';
+
+  recognition.onerror = function (e) {
+    micStatus.textContent = 'Microphone error: ' + e.error;
+    isRecording = false;
+    micBtn.innerHTML = MIC_LABEL_IDLE;
+  };
+
+  recognition.onend = function () {
+    if (isRecording) { recognition.start(); }
+  };
+
+  micBtn.addEventListener('click', function () {
+    if (!isRecording) {
+      baseText = textInput.value;
+      recognition.start();
+      isRecording = true;
+      micBtn.innerHTML = MIC_LABEL_RECORDING;
+      micStatus.textContent = 'Listening…';
+    } else {
+      recognition.stop();
+      isRecording = false;
+      micBtn.innerHTML = MIC_LABEL_IDLE;
+      micStatus.textContent = 'Done — review and submit.';
+    }
+  });
+}());
+</script>
+{% endblock %}

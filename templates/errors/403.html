@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Not authorized — NEVO{% endblock %}
+{% block content %}
+<div style="text-align:center; padding:3rem 1rem;">
+  <h1>Not authorized</h1>
+  <p style="color:#6b7280; margin:1rem 0;">Your account does not have permission to view this page.</p>
+  <a href="{{ url_for('root') }}" class="btn btn--primary">Go home</a>
+</div>
+{% endblock %}

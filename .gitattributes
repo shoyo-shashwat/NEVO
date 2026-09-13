@@ -1,0 +1,5 @@
+# Force LF for shell scripts (Render runs Linux)
+*.sh text eol=lf
+
+# Everything else: auto
+* text=auto

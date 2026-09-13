@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Home — NEVO{% endblock %}
+
+{% block content %}
+<div class="home">
+  <span class="home__eyebrow">NEVO</span>
+  <h1 class="home__heading">Tell us what your community needs</h1>
+  <p class="home__sub">Your voice shapes local development priorities — and you can follow exactly what happens to it.</p>
+
+  <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary btn--large">
+    <svg width="18" height="18"><use href="#icon-megaphone"/></svg>
+    Report a problem
+  </a>
+
+  <div class="home__links">
+    <a href="{{ url_for('citizen.community') }}" class="home__link-card">
+      <svg width="22" height="22"><use href="#icon-people"/></svg>
+      <span>Community issues</span>
+    </a>
+    <a href="{{ url_for('citizen.demand_map') }}" class="home__link-card">
+      <svg width="22" height="22"><use href="#icon-map"/></svg>
+      <span>Demand map</span>
+    </a>
+    {% if current_user.is_authenticated and current_user.get_id().startswith('citizen:') %}
+      <a href="{{ url_for('citizen.my_timeline') }}" class="home__link-card">
+        <svg width="22" height="22"><use href="#icon-clock"/></svg>
+        <span>My timeline</span>
+      </a>
+    {% else %}
+      <a href="{{ url_for('citizen.track_complaint') }}" class="home__link-card">
+        <svg width="22" height="22"><use href="#icon-clock"/></svg>
+        <span>Track a complaint</span>
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

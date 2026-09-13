@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Your profile — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Your profile</h1>
+  <p class="report-flow__hint">{{ account.email }}</p>
+  <form method="POST">
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Full name</label>
+      <input type="text" name="full_name" class="report-flow__location-input" value="{{ account.full_name or '' }}">
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Phone</label>
+      <input type="text" name="phone" class="report-flow__location-input" value="{{ account.phone or '' }}">
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Preferred language</label>
+      <select name="preferred_language" class="report-flow__location-input">
+        <option value="en" {% if account.preferred_language == 'en' %}selected{% endif %}>English</option>
+        <option value="hi" {% if account.preferred_language == 'hi' %}selected{% endif %}>हिन्दी (Hindi)</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn--primary">Save changes</button>
+  </form>
+  <p style="margin-top:1.5rem;"><a href="{{ url_for('citizen.my_timeline') }}">View your reports →</a></p>
+</div>
+{% endblock %}

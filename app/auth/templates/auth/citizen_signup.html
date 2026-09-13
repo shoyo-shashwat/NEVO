@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Create your account — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Create your account</h1>
+  <p class="report-flow__hint">Optional — you can also report anonymously without signing up.</p>
+
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Full name</label>
+      {{ form.full_name(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Email</label>
+      {{ form.email(class_="report-flow__location-input") }}
+      {% for e in form.email.errors %}<p style="color:var(--color-danger); font-size:0.82rem;">{{ e }}</p>{% endfor %}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Phone (optional)</label>
+      {{ form.phone(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Password</label>
+      {{ form.password(class_="report-flow__location-input") }}
+      {% for e in form.password.errors %}<p style="color:var(--color-danger); font-size:0.82rem;">{{ e }}</p>{% endfor %}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Confirm password</label>
+      {{ form.confirm_password(class_="report-flow__location-input") }}
+      {% for e in form.confirm_password.errors %}<p style="color:var(--color-danger); font-size:0.82rem;">{{ e }}</p>{% endfor %}
+    </div>
+    <div style="margin: 1.1rem 0; padding: 0.85rem 1rem; background: var(--color-bg-alt); border-radius: var(--radius-sm); font-size: 0.88rem;">
+      <label style="display:flex; align-items:flex-start; gap:0.5rem;">
+        {{ form.consent() }}
+        <span>{{ form.consent.label.text }}</span>
+      </label>
+      {% for e in form.consent.errors %}<p style="color:var(--color-danger); font-size:0.82rem;">{{ e }}</p>{% endfor %}
+    </div>
+    <button type="submit" class="btn btn--primary btn--large">Create account</button>
+  </form>
+  <p style="margin-top:1rem; font-size:0.9rem;">Already have an account? <a href="{{ url_for('auth.citizen_login') }}">Sign in</a></p>
+</div>
+{% endblock %}

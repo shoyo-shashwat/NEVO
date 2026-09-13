@@ -1,0 +1,44 @@
+{#
+  Shared cluster summary card — included by dashboard.html.
+  Expects: card = {cluster, category_name, total_reports, unique_contributors,
+                   sentiment, pending_decision}
+#}
+{% set c = card.cluster %}
+<div class="cluster-card cluster-card--gov {% if card.pending_decision %}cluster-card--pending{% endif %}">
+  <div class="cluster-card__header">
+    {% if card.priority %}
+      <span class="priority-chip priority-chip--{{ card.priority | lower }}">{{ card.priority }}</span>
+    {% endif %}
+    <span class="cluster-card__category">{{ card.category_name }}</span>
+    <span class="cluster-card__status cluster-card__status--{{ c.active_status | lower }}">
+      {{ c.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+    </span>
+    {% if c.trend == 'increasing' %}
+      <span class="trend--up">↑ Increasing</span>
+    {% endif %}
+  </div>
+  {% if card.alignment_state %}
+    <p class="cluster-card__alignment cluster-card__alignment--{{ card.alignment_state | lower | replace('_', '-') }}">
+      {{ card.alignment_state | replace('_', ' ') | title }}
+    </p>
+  {% endif %}
+
+  <p class="cluster-card__localities">
+    <svg width="14" height="14"><use href="#icon-pin"/></svg>
+    {{ c.affected_localities | join(' · ') }}
+  </p>
+
+  <div class="cluster-card__stats">
+    <span><svg width="14" height="14"><use href="#icon-people"/></svg> {{ card.unique_contributors }} people</span>
+    <span><svg width="14" height="14"><use href="#icon-chart"/></svg> {{ card.total_reports }} reports</span>
+  </div>
+
+  {% if card.sentiment.total > 0 %}
+    <p class="cluster-card__sentiment">
+      Community says: <strong>{{ card.sentiment.still_affected_pct }}% still affected</strong>
+    </p>
+  {% endif %}
+
+  <a href="{{ url_for('government.evidence_detail', cluster_id=c.id) }}"
+     class="btn btn--primary btn--small">Review evidence</a>
+</div>

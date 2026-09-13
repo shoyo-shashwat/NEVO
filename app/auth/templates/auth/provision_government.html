@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Create government account — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Create a government account</h1>
+  <p class="report-flow__hint">A one-time temporary password is generated and shown once — share it through a secure channel.</p>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Full name</label>
+      {{ form.full_name(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Email</label>
+      {{ form.email(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Role</label>
+      {{ form.role(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Region (state/district) — leave blank for national scope</label>
+      {{ form.region_id(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Department — only for Department Officer</label>
+      {{ form.department_id(class_="report-flow__location-input") }}
+    </div>
+    <button type="submit" class="btn btn--primary btn--large">Create account</button>
+  </form>
+</div>
+{% endblock %}

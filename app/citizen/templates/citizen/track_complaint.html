@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Track a complaint — NEVO{% endblock %}
+
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Track a complaint</h1>
+  <p class="report-flow__hint">Works whether or not you have an account — just enter your reference ID.</p>
+
+  <form method="POST" action="{{ url_for('citizen.track_complaint') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="complaint_id" class="report-flow__location-input"
+           placeholder="e.g. NEVO-IN-2026-A1B2C3D4" value="{{ report.complaint_id if report else '' }}"
+           style="margin-bottom:0.9rem;" required>
+    <button type="submit" class="btn btn--primary">Track</button>
+  </form>
+
+  {% if searched %}
+    {% if report %}
+      <div class="timeline-item" style="margin-top:1.5rem;">
+        <p><strong>Reference:</strong> {{ report.complaint_id }}</p>
+        <p><strong>Category:</strong> {{ category_name or "Not yet determined" }}</p>
+        <p><strong>Status:</strong> {{ report.status }}</p>
+        <p><strong>Submitted:</strong> {{ report.created_at.strftime('%d %b %Y') }}</p>
+        {% if report.status == "Resolved" %}
+          <form method="POST" action="{{ url_for('citizen.close_report', report_id=report.id) }}" style="margin-top:0.75rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn--secondary btn--small">Confirm and close this report</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

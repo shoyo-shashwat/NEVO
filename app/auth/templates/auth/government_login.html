@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Government sign in — NEVO{% endblock %}
+{% block content %}
+<div class="report-flow">
+  <h1 class="report-flow__heading">Government sign in</h1>
+  <p class="report-flow__hint">Accounts are provisioned by an administrator — there is no public signup for government roles.</p>
+  <form method="POST" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Email</label>
+      {{ form.email(class_="report-flow__location-input") }}
+    </div>
+    <div class="report-flow__location" style="margin-bottom:0.9rem;">
+      <label class="report-flow__location-label">Password</label>
+      {{ form.password(class_="report-flow__location-input") }}
+    </div>
+    <button type="submit" class="btn btn--primary btn--large">Sign in</button>
+  </form>
+  <p style="margin-top:1rem; font-size:0.9rem;"><a href="{{ url_for('auth.request_password_reset') }}">Forgot password?</a></p>
+</div>
+{% endblock %}

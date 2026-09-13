@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: brics-people-first
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    envVars:
+      - key: DATABASE_URL
+        sync: false        # set manually in Render dashboard — never commit
+      - key: SECRET_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: qwen/qwen3.6-27b
+      - key: COHERE_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: FLASK_APP
+        value: wsgi:app
+      # Phase 0 additions — see .env.example for what each controls.
+      - key: FORCE_HTTPS_COOKIES
+        value: "true"
+      - key: RATELIMIT_STORAGE_URI
+        value: memory://
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
