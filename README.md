@@ -17,7 +17,22 @@ python3 seed/seed_data.py          # demo actors, categories, regions, a sample 
 flask run
 ```
 
-Open `http://127.0.0.1:5000/` — that's the landing page explaining the product. "Report a problem" and "See what your community needs" work immediately, no login required. Click "Demo sign-in" (or go straight to `/login`) to pick a seeded citizen, MP, planning officer, or admin identity if you want a personal timeline or want to see the government side — country-grouped demo credentials live on that dedicated page, not on the landing page itself.
+In a second terminal, run the background job worker (email delivery, cluster-embedding retries — see "Background jobs" below):
+
+```bash
+python3 worker.py
+```
+
+Open `http://127.0.0.1:5000/` — that's the landing page explaining the product. "Report a problem" and "See what your community needs" work immediately, no login required. Real accounts: `/signup` (citizen) or `/signin`. Click "Demo login" (or go straight to `/login`) to pick a seeded citizen, MP, planning officer, or admin identity — country-grouped demo accounts live on that dedicated page (password: see `seed/seed_data.py::DEMO_ACTOR_PASSWORD`), not on the landing page itself. Government accounts (any of the six roles) are provisioned only by an admin from `/gov/admin` — there's no self-registration for government roles.
+
+## Background jobs
+
+`app/services/job_queue.py` + `worker.py` implement a minimal Postgres-backed job queue (no Redis/Celery — `SELECT ... FOR UPDATE SKIP LOCKED` on the `background_jobs` table gives safe concurrent claiming with the database this app already requires). Currently used for:
+
+- Email delivery (password reset, government account provisioning) — decouples the request from SMTP latency/failures
+- Retrying a demand-cluster's embedding if Cohere failed at cluster-creation time
+
+Every AI call (Groq extraction, ElevenLabs transcription, Cohere embedding/matching) is recorded in `ai_processing_logs` — provider, model, confidence, latency, and the structured output, for auditability — see `app/models/ai_models.py`.
 
 ## Structure
 

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Create your account — BRICS People First{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+  <span class="auth-page__eyebrow">Citizen account</span>
+  <h1>Create your account</h1>
+  <p class="auth-page__sub">Sign up to track your reports and get updates on what happens next.</p>
+
+  <div class="auth-card">
+    <form method="POST" action="{{ url_for('auth.signup') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="auth-field">
+        <label for="name">Full name</label>
+        <input type="text" id="name" name="name" value="{{ form_name or '' }}" required autofocus>
+      </div>
+
+      <div class="auth-field">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" value="{{ form_email or '' }}" required>
+      </div>
+
+      <div class="auth-field">
+        <label for="country_id">Country</label>
+        <select id="country_id" name="country_id" required>
+          <option value="">Select your country</option>
+          {% for c in countries %}
+            <option value="{{ c.id }}" {% if form_country_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="auth-field">
+        <label for="preferred_language">Preferred language</label>
+        <select id="preferred_language" name="preferred_language">
+          <option value="en">English</option>
+          <option value="hi">हिन्दी (Hindi)</option>
+          <option value="pt">Português</option>
+          <option value="ru">Русский</option>
+        </select>
+      </div>
+
+      <div class="auth-field">
+        <label for="phone">Phone <span class="report-flow__optional">(optional)</span></label>
+        <input type="text" id="phone" name="phone">
+      </div>
+
+      <div class="auth-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required minlength="8">
+        <p class="auth-field__hint">At least 8 characters, including a letter and a number.</p>
+      </div>
+
+      <div class="auth-field">
+        <label for="confirm_password">Confirm password</label>
+        <input type="password" id="confirm_password" name="confirm_password" required minlength="8">
+      </div>
+
+      <div class="auth-field">
+        <label style="display:flex;align-items:flex-start;gap:8px;font-weight:400;">
+          <input type="checkbox" name="consent" style="width:auto;margin-top:3px;" required>
+          <span>I agree to the <a href="{{ url_for('role_select') }}">privacy notice</a> — my report location, category, and description may be shared with government reviewers to act on.</span>
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--large auth-submit">Create account</button>
+    </form>
+  </div>
+
+  <p class="auth-links">
+    Already have an account? <a href="{{ url_for('auth.signin') }}">Sign in</a>
+  </p>
+</div>
+{% endblock %}

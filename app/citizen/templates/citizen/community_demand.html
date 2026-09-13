@@ -26,6 +26,7 @@
     <p class="empty-state">No active community issues yet. <a href="{{ url_for('citizen.report_flow') }}">Be the first to report one.</a></p>
   {% endif %}
 
+  <div class="cluster-grid">
   {% for item in cluster_data %}
     {% set c = item.cluster %}
     <div class="cluster-card">
@@ -57,6 +58,7 @@
       {# Verification actions — logged-in citizens only #}
       {% if session.get('role') == 'citizen' %}
         <form method="POST" action="{{ url_for('citizen.verify_cluster', cluster_id=c.id) }}" class="verif-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <span class="verif-form__label">Still happening?</span>
           {% for state, label in [('StillHappening','Yes'), ('Worse','Getting worse'), ('Improved','Improved'), ('Resolved','Resolved')] %}
             <button name="state" value="{{ state }}" class="btn btn--tiny">{{ label }}</button>
@@ -65,6 +67,7 @@
       {% endif %}
     </div>
   {% endfor %}
+  </div>
 
 </div>
 {% endblock %}

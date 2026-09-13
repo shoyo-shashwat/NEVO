@@ -36,6 +36,55 @@
   </section>
 
   <section class="admin-section">
+    <h2>Government accounts</h2>
+    <p class="admin-panel__note">
+      Government accounts are provisioned directly by an admin — there is no
+      self-registration for any government role.
+    </p>
+    <table class="admin-table">
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Created</th></tr></thead>
+      <tbody>
+        {% for a in gov_accounts %}
+          <tr>
+            <td>{{ a.full_name }}</td>
+            <td>{{ a.email }}</td>
+            <td>{{ a.role | replace('_', ' ') | title }}</td>
+            <td>{{ a.department.name if a.department else '—' }}</td>
+            <td>{{ a.created_at.strftime('%Y-%m-%d') }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No provisioned government accounts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <form method="POST" action="{{ url_for('government.provision_government_user') }}" class="admin-invite-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="prov-name">Name</label>
+      <input type="text" id="prov-name" name="name" required>
+      <label for="prov-email">Email</label>
+      <input type="email" id="prov-email" name="email" required>
+      <label for="prov-role">Role</label>
+      <select id="prov-role" name="role">
+        <option value="national_admin">National Administrator</option>
+        <option value="state_admin">State Administrator</option>
+        <option value="district_officer">District Officer</option>
+        <option value="department_officer">Department Officer</option>
+        <option value="analyst">Analyst</option>
+        <option value="reviewer">Reviewer</option>
+      </select>
+      <label for="prov-department">Department <span class="report-flow__optional">(department officers only)</span></label>
+      <select id="prov-department" name="department_id">
+        <option value="">—</option>
+        {% for d in departments %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn--small btn--primary">Create account</button>
+    </form>
+  </section>
+
+  <section class="admin-section">
     <h2>Demo actors</h2>
     <table class="admin-table">
       <thead><tr><th>ID</th><th>Name</th><th>Role</th><th>Country</th></tr></thead>

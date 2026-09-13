@@ -256,6 +256,7 @@
       {% if actor.value %}
       {% set actor_name = actor.value.name | replace(' (' ~ country ~ ')', '') %}
       <form class="nevo-country-form" method="POST" action="{{ url_for('login_page') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="actor_id" value="{{ actor.value.id }}">
         <button class="nevo-country" type="submit"
                 data-actor="{{ actor_name }}" data-country="{{ country }}"

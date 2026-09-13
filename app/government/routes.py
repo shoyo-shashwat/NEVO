@@ -22,6 +22,7 @@ from app.models.citizen_models import Contribution, Verification  # read-only co
 from app.models.government_models import GovernmentDecision, Project, Outcome
 from app.models.reference_data import InfrastructureDataPoint, GovernmentInvestment
 from app.models.shared import Category, Country, AdministrativeRegion, EventLog
+from app.models.auth_models import GovernmentAccount, Department, log_action
 
 # Services — scoring lives here only, never inlined in routes
 from app.services import gap_assessment, investment_alignment, priority_scoring
@@ -36,7 +37,7 @@ _UNADDRESSED_STATES = ("UNADDRESSED", "PARTIALLY_ADDRESSED", "IMPLEMENTATION_ACC
 
 
 @government_bp.route("/dashboard")
-@require_role("mp", "planning_officer")
+@require_role("mp", "planning_officer", "reviewer")
 def dashboard():
     """
     Government §5 specifies four sections — Top Priorities, Emerging Gaps,
@@ -94,6 +95,7 @@ def dashboard():
         cards.append({
             "cluster": c,
             "category_name": cat.name if cat else "",
+            "category_code": cat.code if cat else "",
             "total_reports": c.total_reports,
             "unique_contributors": c.unique_contributors,
             "sentiment": c.community_sentiment,
@@ -181,7 +183,7 @@ def dashboard():
 # ---------------------------------------------------------------------------
 
 @government_bp.route("/map")
-@require_role("mp", "planning_officer")
+@require_role("mp", "planning_officer", "reviewer")
 def demand_map():
     """
     Government demand intelligence map — same GeoJSON source as citizen map,
@@ -205,7 +207,7 @@ def demand_map():
 # ---------------------------------------------------------------------------
 
 @government_bp.route("/demand/<cluster_id>")
-@require_role("mp", "planning_officer")
+@require_role("mp", "planning_officer", "reviewer")
 def evidence_detail(cluster_id):
     """
     Single Priority Evidence Card.
@@ -238,6 +240,25 @@ def evidence_detail(cluster_id):
         .first()
     )
 
+    # Multilingual architecture: citizen reports arrive in the citizen's own
+    # language and stay that way (original_raw_input is never translated —
+    # see app/models/citizen_models.py). Until now a government reviewer had
+    # no way to see what was actually reported, in any language — evidence_
+    # detail only ever showed aggregate numbers. problem_summary_en is the
+    # "common format" structured field groq_client.extract_report_fields()
+    # produces for exactly this — a handful of representative ones here
+    # give an officer real, readable-in-English context regardless of the
+    # underlying reports' language.
+    from app.models.citizen_models import Report
+    sample_reports = (
+        Report.query
+        .join(Contribution, Contribution.report_id == Report.id)
+        .filter(Contribution.demand_cluster_id == cluster_id, Report.problem_summary_en.isnot(None))
+        .order_by(Report.created_at.desc())
+        .limit(3)
+        .all()
+    )
+
     return render_template(
         "government/evidence_detail.html",
         cluster=cluster,
@@ -249,6 +270,7 @@ def evidence_detail(cluster_id):
         dominant_severity=dominant_sev,   # same value passed to stage2_priority
         existing_decision=existing_decision,
         role=current_role(),
+        sample_reports=sample_reports,
     )
 
 
@@ -304,12 +326,16 @@ def decision_workspace(cluster_id):
             demand_cluster_id=cluster_id,
             country_id=cluster.country_id,
             decided_by_id=current_actor_id(),
+            decided_by_account_id=current_actor_id(),
             decided_by_role=role,
             decision_type=decision_type,
             reason=reason,          # human-authored — sourced from form only
             linked_project_id=linked_project_id,
         )
         db.session.add(decision)
+        db.session.flush()
+        log_action("government", current_actor_id(), "decision_recorded", "demand_cluster", cluster_id,
+                   after_state={"decision_type": decision_type})
 
         # Update cluster workflow state
         cluster.review_status = "Decided"
@@ -420,6 +446,8 @@ def propose_project(cluster_id):
     if latest_decision:
         latest_decision.linked_project_id = project.id
 
+    log_action("government", current_actor_id(), "project_proposed", "project", project.id,
+               after_state={"name": name, "demand_cluster_id": cluster_id})
     db.session.commit()
     flash(f'Project "{name}" created and linked to this demand.', "success")
     return redirect(url_for("government.evidence_detail", cluster_id=cluster_id))
@@ -467,6 +495,8 @@ def update_project_status(project_id):
                 metadata_={"project_status": new_status, "project_id": project.id},
             ))
 
+    log_action("government", current_actor_id(), "project_status_updated", "project", project.id,
+               after_state={"status": new_status})
     db.session.commit()
     flash("Project status updated.", "success")
     return redirect(url_for("government.projects_outcomes"))
@@ -528,6 +558,9 @@ def record_outcome(project_id):
                 metadata_={"outcome_status": outcome.status, "project_id": project.id},
             ))
 
+    db.session.flush()
+    log_action("government", current_actor_id(), "outcome_recorded", "outcome", outcome.id,
+               after_state={"status": outcome.status})
     db.session.commit()
     flash("Outcome recorded.", "success")
     return redirect(url_for("government.projects_outcomes"))
@@ -538,7 +571,7 @@ def record_outcome(project_id):
 # ---------------------------------------------------------------------------
 
 @government_bp.route("/projects")
-@require_role("mp", "planning_officer")
+@require_role("mp", "planning_officer", "reviewer")
 def projects_outcomes():
     """Linked interventions and progress/outcome status."""
     country_code = session.get("country_code", "IN")
@@ -590,20 +623,107 @@ def projects_outcomes():
 def admin():
     """
     Technical configuration only — no policy authority (Progress Log §5.1).
-    MVP scope: view seeded countries, categories, actor list.
+    Also the only place government accounts get provisioned — there is no
+    self-registration for any government role (national_admin, state_admin,
+    district_officer, department_officer, analyst, reviewer). The DB has no
+    invite-token table for these accounts (see app/models/auth_models.py
+    provenance note), so provisioning creates the account directly with a
+    generated one-time password (see provision_government_user() below).
     """
     countries = Country.query.all()
     categories = Category.query.all()
+    departments = Department.query.order_by(Department.name).all()
 
     from app.auth.session import get_all_demo_actors
     actors = get_all_demo_actors()
+
+    gov_accounts = (
+        GovernmentAccount.query
+        .filter_by(is_demo=False)
+        .order_by(GovernmentAccount.created_at.desc())
+        .all()
+    )
 
     return render_template(
         "government/admin.html",
         countries=countries,
         categories=categories,
+        departments=departments,
         actors=actors,
+        gov_accounts=gov_accounts,
     )
+
+
+@government_bp.route("/admin/provision", methods=["POST"])
+@require_role("admin")
+def provision_government_user():
+    """
+    Directly create a new government account (no invite-token flow exists
+    for these roles — see admin() docstring). A random one-time password is
+    generated and either emailed to the new account or, if SMTP isn't
+    configured, shown once to the admin performing this action so the flow
+    still works without email credentials configured. The new account
+    should change this password after first sign-in (see /account).
+    """
+    from app.models.auth_models import GOVERNMENT_ROLES
+    from app.auth.security import is_valid_email, generate_raw_token, hash_password
+    from app.services.job_queue import queue_email
+
+    name = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    role = request.form.get("role")
+    department_id = request.form.get("department_id") or None
+    country_code = session.get("country_code", "IN")
+
+    country = Country.query.filter_by(code=country_code).first()
+
+    if not name or not is_valid_email(email) or role not in GOVERNMENT_ROLES or country is None:
+        flash("Please provide a valid name, email, and role.", "error")
+        return redirect(url_for("government.admin"))
+
+    from app.auth.routes import _email_in_use  # single source of truth for cross-table uniqueness
+    if _email_in_use(email):
+        flash("An account with this email already exists.", "error")
+        return redirect(url_for("government.admin"))
+
+    temp_password = generate_raw_token()[:16]
+    account = GovernmentAccount(
+        email=email,
+        password_hash=hash_password(temp_password),
+        full_name=name,
+        role=role,
+        country_id=country.id,
+        department_id=department_id,
+        provisioned_by=current_actor_id(),
+        is_active=True,
+        is_demo=False,
+    )
+    db.session.add(account)
+    db.session.flush()
+    log_action("government", current_actor_id(), "government_account_provisioned",
+               "government_account", account.id, ip_address=(request.remote_addr or "")[:64])
+    db.session.commit()
+
+    signin_url = url_for("auth.signin", _external=True)
+    sent = queue_email(
+        email,
+        "Your BRICS People First government account",
+        f"Hello {name},\n\n"
+        f"An account has been created for you as {role.replace('_', ' ').title()}.\n"
+        f"Sign in at {signin_url} with:\n  Email: {email}\n  Temporary password: {temp_password}\n\n"
+        "Please change this password after signing in (Account page).",
+    )
+    db.session.commit()  # persist the queued job row (if any)
+
+    if sent:
+        flash(f"Account created for {email} — credentials emailed.", "success")
+    else:
+        flash(
+            f"Email is not configured on this server — share these credentials with {name} directly: "
+            f"{email} / {temp_password}",
+            "info",
+        )
+    return redirect(url_for("government.admin"))
 
 
 # ---------------------------------------------------------------------------

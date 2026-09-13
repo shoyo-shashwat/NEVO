@@ -1,9 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Home — BRICS People First{% endblock %}
 
+{% block head %}
+<style>
+/* Civic backdrop — same exported Figma art as the landing/login pages
+   (app/static/img/login.png + login2.png), reused here for the citizen
+   home page per the reference design's illustrated background. Scoped to
+   this template only; base.html's own layout is untouched. */
+.home{ position: relative; z-index: 1; padding-bottom: 12rem; }
+.home-bg{ position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+.home-bg img{ position: absolute; bottom: 0; height: auto; object-fit: contain; opacity: .55; }
+.home-bg__left{ left: -2rem; width: min(24vw, 280px); }
+.home-bg__right{ right: -1rem; width: min(28vw, 340px); }
+@media (max-width: 900px){ .home{ padding-bottom: 1rem; } .home-bg{ display: none; } }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="home">
-  <span class="home__eyebrow">India · Brazil · Russia</span>
+  <div class="home-bg" aria-hidden="true">
+    <img class="home-bg__left" src="{{ url_for('static', filename='img/login2.png') }}" alt="">
+    <img class="home-bg__right" src="{{ url_for('static', filename='img/login.png') }}" alt="">
+  </div>
+  <span class="home__eyebrow">BRICS</span>
   <h1 class="home__heading">Tell us what your community needs</h1>
   <p class="home__sub">Your voice shapes local development priorities — and you can follow exactly what happens to it.</p>
 
@@ -13,18 +32,30 @@
   </a>
 
   <div class="home__links">
-    <a href="{{ url_for('citizen.community') }}" class="home__link-card">
-      <svg width="22" height="22"><use href="#icon-people"/></svg>
-      <span>Community issues</span>
+    <a href="{{ url_for('citizen.community') }}" class="home__link-card home__link-card--orange">
+      <span class="home__link-card__top">
+        <span class="home__link-card__icon"><svg width="20" height="20"><use href="#icon-people"/></svg></span>
+        <span class="home__link-card__arrow"><svg width="16" height="16"><use href="#icon-arrow-right"/></svg></span>
+      </span>
+      <span class="home__link-card__title">Community issues</span>
+      <span class="home__link-card__desc">See what problems are being reported in your area and by your neighbours.</span>
     </a>
-    <a href="{{ url_for('citizen.demand_map') }}" class="home__link-card">
-      <svg width="22" height="22"><use href="#icon-map"/></svg>
-      <span>Demand map</span>
+    <a href="{{ url_for('citizen.demand_map') }}" class="home__link-card home__link-card--green">
+      <span class="home__link-card__top">
+        <span class="home__link-card__icon"><svg width="20" height="20"><use href="#icon-map"/></svg></span>
+        <span class="home__link-card__arrow"><svg width="16" height="16"><use href="#icon-arrow-right"/></svg></span>
+      </span>
+      <span class="home__link-card__title">Demand map</span>
+      <span class="home__link-card__desc">Explore issues on the map and see what your community is talking about.</span>
     </a>
     {% if session.get('role') == 'citizen' %}
-      <a href="{{ url_for('citizen.my_timeline') }}" class="home__link-card">
-        <svg width="22" height="22"><use href="#icon-clock"/></svg>
-        <span>My timeline</span>
+      <a href="{{ url_for('citizen.my_timeline') }}" class="home__link-card home__link-card--blue">
+        <span class="home__link-card__top">
+          <span class="home__link-card__icon"><svg width="20" height="20"><use href="#icon-clock"/></svg></span>
+          <span class="home__link-card__arrow"><svg width="16" height="16"><use href="#icon-arrow-right"/></svg></span>
+        </span>
+        <span class="home__link-card__title">My timeline</span>
+        <span class="home__link-card__desc">Track every step of your report from submission to the final outcome.</span>
       </a>
     {% endif %}
   </div>

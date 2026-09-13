@@ -62,6 +62,18 @@
   --gap:    1.25rem;
   --font-display: 'Manrope', 'Segoe UI', system-ui, sans-serif;
   --font-body:    'Inter', 'Segoe UI', system-ui, sans-serif;
+
+  /* ---- Responsive containers ----
+     Two tiers: --container-max for prose/form pages (report flow, decision
+     workspace, timeline — text shouldn't stretch edge-to-edge on a 2560px
+     monitor), --container-wide for grid/dashboard pages (community demand,
+     government dashboard, projects, admin) where extra width means more
+     usable columns, not just wasted whitespace. Both are fluid (min() of a
+     vw-based value and a hard cap) so nothing is fixed to one resolution —
+     they scale continuously across 1280 -> 2560px rather than jumping at
+     fixed breakpoints. */
+  --container-max:  min(1320px, 92vw);
+  --container-wide: min(1680px, 94vw);
 }
 
 body.theme-gov {
@@ -70,15 +82,27 @@ body.theme-gov {
   --color-accent-tint: var(--color-gov-tint);
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; height: 100%; }
 
+/* Sticky footer — without this, any page shorter than the viewport
+   (community issues with 1-2 cards, my timeline with few reports, an
+   empty map) leaves the footer sitting right under the short content
+   instead of pinned to the bottom of the screen, with a dead gap of
+   plain background below it. body becomes a column flex container so
+   .site-main (flex:1) always eats the remaining space and the footer
+   stays anchored at the bottom regardless of content length. */
 body {
   font-family: var(--font-body);
   color: var(--color-text);
   background: var(--color-bg);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
+.site-header, .site-footer { flex: none; }
+.site-main { flex: 1 0 auto; width: 100%; }
 
 h1, h2, h3 { font-family: var(--font-display); color: var(--color-ink); line-height: 1.25; }
 a { color: inherit; }
@@ -93,7 +117,7 @@ a { color: inherit; }
   border-bottom: 1px solid var(--color-border);
 }
 .site-header__inner {
-  max-width: 1080px; margin: 0 auto;
+  max-width: var(--container-wide); margin: 0 auto;
   display: flex; justify-content: space-between; align-items: center;
   gap: 1rem; padding: 0.7rem var(--gap);
   flex-wrap: wrap;
@@ -105,9 +129,8 @@ a { color: inherit; }
   flex-shrink: 0;
 }
 .site-logo__mark {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: 9px;
-  background: var(--color-accent); color: #fff; flex-shrink: 0;
+  display: inline-block; width: 30px; height: 30px; flex-shrink: 0;
+  background: transparent url("../img/nevo-logo.png") center/contain no-repeat;
 }
 
 /* Primary navigation — the real app menu, not the demo switcher */
@@ -157,11 +180,45 @@ a { color: inherit; }
   .site-nav-primary { order: 2; width: auto; justify-content: center; }
 }
 
-.site-main { max-width: 960px; margin: 2rem auto; padding: 0 var(--gap) 3rem; }
+.site-main { max-width: var(--container-max); margin: 2rem auto; padding: 0 var(--gap) 3rem; }
+/* Dashboard/grid-style pages get the wide container — added via a body
+   class per-template (see base.html) rather than guessing from route,
+   since "which pages are dashboards" is a content decision, not a URL one. */
+body.layout-wide .site-main { max-width: var(--container-wide); }
 .site-footer {
   text-align: center; padding: 2.5rem 1rem 3rem; color: var(--color-faint);
   font-size: 0.8rem; border-top: 1px solid var(--color-border-soft); margin-top: 3rem;
 }
+
+/* Rich footer — every page except role_select/login, which build their own
+   (see base.html's request.endpoint conditional). */
+.site-footer--rich {
+  text-align: left; background: #1c1917; color: #fbf8f3;
+  border-top: none; padding: 0; margin-top: 4rem;
+}
+.site-footer__inner {
+  max-width: var(--container-wide); margin: 0 auto; padding: 2rem var(--gap) 1rem;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.site-footer__brand {
+  display: inline-flex; align-items: center; gap: 0.7rem;
+  text-decoration: none; color: #fbf8f3; font-size: 0.9rem; opacity: 0.9;
+}
+.site-footer__brand img { display: block; border-radius: 999px; }
+.site-footer__links { display: flex; gap: 1.3rem; }
+.site-footer__links a {
+  color: #9c9184; font-size: 0.85rem; text-decoration: none; opacity: 0.85;
+}
+.site-footer__links a:hover { opacity: 1; color: #fbf8f3; }
+.site-footer__note {
+  max-width: var(--container-wide); margin: 0 auto; padding: 0 var(--gap) 1.5rem;
+  font-size: 0.75rem; color: #9c9184; opacity: 0.7;
+}
+
+/* Error pages (404/500) */
+.error-page { text-align: center; padding: 4rem 1rem; }
+.error-page h1 { margin-bottom: 0.75rem; }
+.error-page p { color: var(--color-muted); margin-bottom: 1.5rem; }
 
 /* Flash messages */
 .flash-stack { margin-bottom: 1.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
@@ -200,6 +257,12 @@ a { color: inherit; }
 /* =========================================================================
    Cards & status pills
    ========================================================================= */
+/* Community issues grid — on a wide viewport, cards flow into columns
+   instead of stretching one-per-row edge to edge; on narrow screens
+   auto-fit naturally collapses to a single column. */
+.cluster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; align-items: start; }
+.cluster-grid .cluster-card { margin-bottom: 0; }
+
 .cluster-card {
   background: var(--color-card); border: 1px solid var(--color-border);
   border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem;
@@ -207,6 +270,14 @@ a { color: inherit; }
 }
 .cluster-card:hover { box-shadow: var(--shadow-md); }
 .cluster-card--highlight { border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-tint); }
+.cluster-card--illustrated {
+  display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+  padding: 1.5rem;
+}
+.cluster-card--illustrated .cluster-card__body { flex: 1 1 auto; min-width: 0; }
+.cluster-card__illustration { flex: none; display: flex; align-items: center; justify-content: center; }
+@media (max-width: 640px) { .cluster-card--illustrated { flex-direction: column; align-items: stretch; }
+  .cluster-card__illustration { align-self: center; } }
 .cluster-card--pending   { border-left: 4px solid var(--color-gov); }
 .cluster-card--gov { border-color: var(--color-border); }
 .cluster-card__header    { display: flex; gap: 0.6rem; align-items: center;
@@ -270,13 +341,31 @@ a { color: inherit; }
 .home__sub     { color: var(--color-muted); margin-bottom: 2.25rem; font-size: 1.05rem; }
 .home__links   { margin-top: 2.5rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
                  gap: 0.9rem; text-align: left; }
-.home__link-card { display: flex; flex-direction: column; gap: 0.6rem; padding: 1.1rem;
+.home__link-card { display: flex; flex-direction: column; gap: 0.7rem; padding: 1.4rem;
                     background: var(--color-card); border: 1px solid var(--color-border);
                     border-radius: var(--radius); text-decoration: none; color: var(--color-ink);
                     transition: box-shadow .15s, transform .15s; }
 .home__link-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.home__link-card svg { color: var(--color-accent); }
-.home__link-card span { font-weight: 700; font-size: 0.92rem; }
+.home__link-card__top { display: flex; align-items: center; justify-content: space-between; }
+.home__link-card__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; border-radius: 999px;
+}
+.home__link-card__arrow {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 999px; background: var(--color-bg-alt);
+  transition: background .15s, color .15s;
+}
+.home__link-card:hover .home__link-card__arrow { background: currentColor; color: #fff; }
+.home__link-card__title { font-weight: 700; font-size: 0.98rem; }
+.home__link-card__desc { color: var(--color-muted); font-size: 0.85rem; line-height: 1.5; }
+
+.home__link-card--orange .home__link-card__icon { background: var(--color-accent-tint); color: var(--color-accent-dark); }
+.home__link-card--orange .home__link-card__arrow { color: var(--color-accent); }
+.home__link-card--green .home__link-card__icon { background: var(--color-success-bg); color: var(--color-success); }
+.home__link-card--green .home__link-card__arrow { color: var(--color-success); }
+.home__link-card--blue .home__link-card__icon { background: var(--color-info-bg); color: var(--color-info); }
+.home__link-card--blue .home__link-card__arrow { color: var(--color-info); }
 
 /* =========================================================================
    Report flow
@@ -335,6 +424,7 @@ a { color: inherit; }
 .report-flow__next-icon { display: inline-flex; align-items: center; justify-content: center;
                         width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; margin-top: 1px;
                         background: #fff; color: var(--color-accent-dark); }
+.report-flow__sidebar-illustration { display: flex; justify-content: center; margin-top: 1.5rem; opacity: .9; }
 
 @media (max-width: 760px) {
   .report-flow { grid-template-columns: 1fr; }
@@ -562,7 +652,9 @@ a { color: inherit; }
 /* =========================================================================
    Dashboard
    ========================================================================= */
-.gov-dashboard__head   { margin-bottom: 1.5rem; }
+.gov-dashboard__head   { margin-bottom: 1.5rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; }
+.gov-dashboard__head-illustration { flex: none; opacity: .9; }
+@media (max-width: 760px) { .gov-dashboard__head-illustration { display: none; } }
 .gov-dashboard__role-badge { display: inline-flex; align-items: center; gap: 0.35rem;
                          font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
                          color: var(--color-accent-dark); background: var(--color-accent-tint);
@@ -579,9 +671,16 @@ a { color: inherit; }
 .dashboard-stat__value { display: block; font-family: var(--font-display); font-size: 1.7rem;
                          font-weight: 800; color: var(--color-ink); letter-spacing: -0.01em; }
 .dashboard-stat__label { display: block; font-size: 0.78rem; color: var(--color-muted); margin-top: 0.2rem; }
+.dashboard-stat__icon  { display: inline-flex; align-items: center; justify-content: center;
+                         width: 34px; height: 34px; border-radius: 999px; margin-bottom: 0.6rem; }
+.dashboard-stat__icon--info    { background: var(--color-info-bg);    color: var(--color-info); }
+.dashboard-stat__icon--danger  { background: var(--color-p-critical-bg); color: var(--color-p-critical); }
+.dashboard-stat__icon--warning { background: var(--color-warning-bg); color: var(--color-warning); }
+.dashboard-stat__icon--success { background: var(--color-success-bg); color: var(--color-success); }
 .dashboard-stat--critical { border-color: var(--color-p-critical); background: var(--color-p-critical-bg); }
 .dashboard-stat--critical .dashboard-stat__value { color: var(--color-p-critical); }
 .dashboard-stat--critical .dashboard-stat__label { color: var(--color-p-critical); opacity: .85; }
+.dashboard-stat--critical .dashboard-stat__icon--danger { background: #fff; }
 
 .dashboard-section     { margin-bottom: 2.25rem; }
 .dashboard-section__title { font-size: 0.78rem; text-transform: uppercase;
@@ -739,9 +838,14 @@ a { color: inherit; }
                           background: var(--color-bg-alt); padding: 1px 8px; border-radius: 999px; }
 .map-category-item--active .map-category-item__count { background: #fff; color: var(--color-accent-dark); }
 
+.map-stats  { margin-bottom: 1.25rem; }
 .map-main   { min-width: 0; }
-#map        { height: 560px; width: 100%; border-radius: var(--radius-lg); overflow: hidden;
-              box-shadow: var(--shadow-md); border: 1px solid var(--color-border); }
+#map        { height: 620px; width: 100%; border-radius: var(--radius-lg); overflow: hidden;
+              box-shadow: var(--shadow-md); border: 1px solid var(--color-border); background: var(--color-bg-alt); }
+/* Tone the raw OSM tiles down to the app's warm/muted palette instead of
+   the jarring stock blue-water/bright-green look — a light sepia + reduced
+   saturation reads as "part of this product," not an embedded iframe. */
+#map .leaflet-tile-pane { filter: saturate(.55) brightness(1.04) sepia(.12) contrast(.96); }
 
 .map-feed-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; max-height: 560px; overflow-y: auto; }
 .map-feed-item { display: flex; align-items: flex-start; gap: 0.55rem; padding: 0.6rem 0.5rem;

@@ -20,6 +20,24 @@
   <h1>Demand intelligence</h1>
   <p class="page-hint">Every pin is a collective demand cluster in {{ country_code }} — click one to open its evidence card.</p>
 
+  <div class="dashboard-stats map-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-signal"/></svg></span>
+      <span class="dashboard-stat__value" id="map-stat-total">–</span>
+      <span class="dashboard-stat__label">Active clusters</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-map"/></svg></span>
+      <span class="dashboard-stat__value" id="map-stat-categories">–</span>
+      <span class="dashboard-stat__label">Categories active</span>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-chart"/></svg></span>
+      <span class="dashboard-stat__value" id="map-stat-increasing">–</span>
+      <span class="dashboard-stat__label">Trending up</span>
+    </div>
+  </div>
+
   <div class="map-layout">
     <aside class="map-sidebar">
       <h2 class="map-sidebar__title">Categories</h2>
@@ -152,6 +170,13 @@
           countEl.textContent = counts[label] || 0;
         }
       });
+
+      var totalEl = document.getElementById('map-stat-total');
+      var catEl = document.getElementById('map-stat-categories');
+      var upEl = document.getElementById('map-stat-increasing');
+      if (totalEl) totalEl.textContent = geojson.features.length;
+      if (catEl) catEl.textContent = Object.keys(counts).length;
+      if (upEl) upEl.textContent = geojson.features.filter(function (f) { return f.properties.trend === 'increasing'; }).length;
     });
 
   document.querySelectorAll('.map-category-item').forEach(function (item) {

@@ -4,7 +4,8 @@
                    sentiment, pending_decision}
 #}
 {% set c = card.cluster %}
-<div class="cluster-card cluster-card--gov {% if card.pending_decision %}cluster-card--pending{% endif %}">
+<div class="cluster-card cluster-card--gov cluster-card--illustrated {% if card.pending_decision %}cluster-card--pending{% endif %}">
+<div class="cluster-card__body">
   <div class="cluster-card__header">
     {% if card.priority %}
       <span class="priority-chip priority-chip--{{ card.priority | lower }}">{{ card.priority }}</span>
@@ -41,4 +42,13 @@
 
   <a href="{{ url_for('government.evidence_detail', cluster_id=c.id) }}"
      class="btn btn--primary btn--small">Review evidence</a>
+</div>
+  {% set _illus = card.category_code if card.category_code in
+       ['water_sanitation','healthcare_access','roads_transport','electricity_utilities','education_access','waste_environment']
+       else None %}
+  {% if _illus %}
+    <div class="cluster-card__illustration" aria-hidden="true">
+      <svg width="72" height="72"><use href="#illus-{{ _illus }}"/></svg>
+    </div>
+  {% endif %}
 </div>

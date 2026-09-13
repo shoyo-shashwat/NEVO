@@ -13,8 +13,10 @@ from flask import (
 )
 from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import func
+from datetime import datetime, timezone
 import json
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ from app.models.demand_cluster import DemandCluster
 from app.models.shared import Category, AdministrativeRegion, EventLog
 # Cross-side reads — government data read directly from models/, no government/ import
 from app.models.government_models import GovernmentDecision, Project, Outcome
-from app.auth.session import current_actor_id, current_role
+from app.auth.session import current_actor_id, current_role, current_user, current_account_type
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,13 @@ def report_flow():
     latitude = float(lat_raw) if lat_raw else None
     longitude = float(lng_raw) if lng_raw else None
 
+    # AI calls in this view are buffered here and persisted as
+    # AIProcessingLog rows once report.id exists (after the flush below) —
+    # the audit trail the AI pipeline requires: provider/model/confidence/
+    # timestamp/structured-output for every call, without ever touching
+    # Report.original_raw_input itself.
+    ai_log_entries = []
+
     if channel == "voice":
         audio = request.files.get("audio")
         if not audio:
@@ -73,9 +82,24 @@ def report_flow():
             return render_template("citizen/report_flow.html")
         try:
             from app.services.elevenlabs_client import transcribe_audio, TranscriptionError
+            _t0 = time.monotonic()
             result = transcribe_audio(audio.read(), mime_type=audio.mimetype or "audio/webm")
             raw_text = result["text"]
+            ai_log_entries.append(dict(
+                stage="transcription", provider="elevenlabs", model="scribe_v2",
+                success=True, latency_ms=int((time.monotonic() - _t0) * 1000),
+                structured_output={"language_detected": result.get("language_detected"),
+                                    "duration_seconds": result.get("duration_seconds")},
+            ))
         except TranscriptionError as e:
+            # No Report will ever exist for this attempt (channel-level
+            # failure — see elevenlabs_client.py) — log immediately with
+            # report_id=None rather than buffering to a report that won't
+            # be created.
+            from app.models.ai_models import log_ai_call
+            log_ai_call("transcription", "elevenlabs", "scribe_v2",
+                        success=False, error_message=str(e)[:2000])
+            db.session.commit()
             flash(str(e), "error")
             return render_template("citizen/report_flow.html")
     else:
@@ -104,13 +128,24 @@ def report_flow():
         extraction_text = raw_text + f"\n[Location hint: {location_hint}]"
 
     from app.services.groq_client import extract_report_fields, ask_clarification
+    _t0 = time.monotonic()
     try:
         extracted = extract_report_fields(extraction_text)
+        ai_log_entries.append(dict(
+            stage="extraction", provider="groq", model=_groq_model_name(),
+            success=True, latency_ms=int((time.monotonic() - _t0) * 1000),
+            structured_output={k: v for k, v in extracted.items() if k != "meta"},
+        ))
     except Exception as e:
         # Groq API error, truncated response, or JSON parse failure.
         # Never 500 during a live demo — fall back to Draft with a retry message.
         logger.warning("Groq extraction failed (%s), falling back to Draft: %s",
                        type(e).__name__, str(e)[:120])
+        ai_log_entries.append(dict(
+            stage="extraction", provider="groq", model=_groq_model_name(),
+            success=False, latency_ms=int((time.monotonic() - _t0) * 1000),
+            error_message=f"{type(e).__name__}: {str(e)[:500]}",
+        ))
         extracted = {
             "category": None, "location": None, "severity": None,
             "duration": None, "affected_group": None,
@@ -163,13 +198,17 @@ def report_flow():
     # --- Draft/Report gate (Progress Log §13.1) ---
     status = "Unclustered" if meta.get("complete") else "Draft"
 
+    citizen_account_id, anonymous_token = _current_identity()
     report = Report(
-        citizen_id=current_actor_id() or "anon",
+        citizen_account_id=citizen_account_id,
+        anonymous_token=anonymous_token,
+        consent_given_at=datetime.now(timezone.utc),
         country_id=country_id or "country-in",
         region_id=region_id,
         category_id=category_id,
         original_raw_input=raw_text,   # write-once — never updated after this line
         original_language=extracted.get("language_detected"),
+        problem_summary_en=extracted.get("problem_summary_en"),
         channel=channel,
         severity=extracted.get("severity"),
         duration=extracted.get("duration"),
@@ -180,6 +219,11 @@ def report_flow():
     )
     db.session.add(report)
     db.session.flush()   # get report.id before commit
+
+    # Persist the buffered AI audit entries now that report.id exists.
+    from app.models.ai_models import log_ai_call
+    for entry in ai_log_entries:
+        log_ai_call(report_id=report.id, **entry)
 
     # Optional evidence photo (Finding 6 — Citizen Report Flow Audit).
     # Stored locally under app/static/uploads/evidence/ (see services/evidence_storage.py).
@@ -221,7 +265,19 @@ def report_flow():
         if not extracted.get("meta", {}).get("missing_fields"):
             clarification = "Could you describe the problem in a bit more detail?"
         else:
-            clarification = ask_clarification(raw_text, extracted["meta"]["missing_fields"])
+            _t0 = time.monotonic()
+            try:
+                clarification = ask_clarification(raw_text, extracted["meta"]["missing_fields"])
+                log_ai_call(report_id=report.id, stage="clarification", provider="groq",
+                            model=_groq_model_name(), success=True,
+                            latency_ms=int((time.monotonic() - _t0) * 1000),
+                            structured_output={"missing_fields": extracted["meta"]["missing_fields"]})
+            except Exception as e:
+                log_ai_call(report_id=report.id, stage="clarification", provider="groq",
+                            model=_groq_model_name(), success=False,
+                            latency_ms=int((time.monotonic() - _t0) * 1000),
+                            error_message=f"{type(e).__name__}: {str(e)[:500]}")
+                clarification = "Could you describe the problem in a bit more detail?"
         db.session.commit()
         return render_template(
             "citizen/report_flow.html",
@@ -233,12 +289,16 @@ def report_flow():
             longitude=longitude,
         )
 
-    # --- Report is complete: embed + match ---
-    from app.services.cohere_client import embed_text
+    # --- Report is complete: match against existing demand ---
+    # find_similar_clusters() embeds report_text internally (asymmetric
+    # "search_query" embedding) — an earlier version of this code also
+    # called embed_text() separately just before this with its result
+    # discarded, paying for a second Cohere call with no effect. Removed;
+    # the one embedding call below is the only one that actually matters.
     from app.services.demand_matching import find_similar_clusters
 
+    _t0 = time.monotonic()
     try:
-        embed_text(extracted.get("problem_summary") or raw_text)
         match_result = None
         if category_id and country_id:
             match_result = find_similar_clusters(
@@ -246,6 +306,12 @@ def report_flow():
                 category_id=category_id,
                 country_id=country_id,
             )
+        top_similarity = match_result.matches[0].similarity if match_result and match_result.matches else None
+        log_ai_call(report_id=report.id, stage="demand_matching", provider="cohere", model="embed-v4.0",
+                    success=True, latency_ms=int((time.monotonic() - _t0) * 1000),
+                    confidence=(f"{top_similarity:.3f}" if top_similarity is not None else None),
+                    structured_output={"tier": match_result.tier if match_result else "no_match",
+                                        "candidate_count": len(match_result.matches) if match_result else 0})
     except Exception as embed_err:
         # Embedding or pgvector query failed — rollback and continue without matching.
         # Report is still saved as Unclustered; citizen can still see the demand result page.
@@ -253,6 +319,9 @@ def report_flow():
         db.session.rollback()
         # Re-add the report after rollback
         db.session.add(report)
+        log_ai_call(report_id=report.id, stage="demand_matching", provider="cohere", model="embed-v4.0",
+                    success=False, latency_ms=int((time.monotonic() - _t0) * 1000),
+                    error_message=f"{type(embed_err).__name__}: {str(embed_err)[:500]}")
         match_result = None
 
     db.session.commit()
@@ -307,7 +376,7 @@ def demand_result(report_id):
                 db.session.add(Evidence(
                     type="photo",
                     url=photo_url,
-                    uploaded_by=report.citizen_id,
+                    uploaded_by=report.citizen_account_id or report.anonymous_token or "anon",
                     attached_to="DemandCluster",
                     attached_to_id=cluster_id,
                     report_id=report.id,
@@ -461,6 +530,7 @@ def demand_map_data():
         DemandCluster.category_id,
         DemandCluster.active_status,
         DemandCluster.affected_localities,
+        DemandCluster.trend,
         ST_AsGeoJSON(DemandCluster.centroid).label("geojson"),
     ).filter(
         DemandCluster.centroid.isnot(None),
@@ -487,6 +557,7 @@ def demand_map_data():
                 "category_code": cat.code if cat else "",
                 "status": row.active_status,
                 "localities": row.affected_localities or [],
+                "trend": row.trend,
             },
         })
 
@@ -512,7 +583,7 @@ def my_timeline():
     # All reports by this citizen
     reports = (
         Report.query
-        .filter_by(citizen_id=actor_id)
+        .filter_by(citizen_account_id=actor_id)
         .order_by(Report.created_at.desc())
         .all()
     )
@@ -521,7 +592,7 @@ def my_timeline():
     for report in reports:
         # Get the cluster this report joined (if any)
         contrib = Contribution.query.filter_by(
-            report_id=report.id, citizen_id=actor_id
+            report_id=report.id, citizen_account_id=actor_id
         ).first()
 
         cluster = None
@@ -622,9 +693,10 @@ def verify_cluster(cluster_id):
         flash("Invalid verification state.", "error")
         return redirect(url_for("citizen.community"))
 
-    actor_id = current_actor_id() or "anon"
+    citizen_account_id, anonymous_token = _current_identity()
     db.session.add(Verification(
-        citizen_id=actor_id,
+        citizen_account_id=citizen_account_id,
+        anonymous_token=anonymous_token,
         demand_cluster_id=cluster_id,
         state=state,
     ))
@@ -645,6 +717,36 @@ def _country_id_from_session() -> str:
     return country.id if country else "country-in"
 
 
+def _groq_model_name() -> str:
+    """Mirrors groq_client._model() — kept in sync so audit logs record the
+    model actually used, not a hardcoded guess."""
+    import os
+    return os.environ.get("GROQ_MODEL", "qwen/qwen3-27b")
+
+
+def _current_identity():
+    """
+    Returns (citizen_account_id, anonymous_token) — exactly one is set.
+
+    A logged-in citizen uses their real account id. An anonymous visitor
+    gets a random token persisted in the signed session cookie, so they
+    can keep tracking their own reports/contributions/votes across visits
+    on the same browser without ever creating an account — the whole point
+    of "no login required" for citizen reporting (see README).
+    """
+    user = current_user()
+    if user is not None and current_account_type() == "citizen":
+        return user.id, None
+
+    token = session.get("anon_token")
+    if not token:
+        import secrets
+        token = secrets.token_urlsafe(24)
+        session["anon_token"] = token
+        session.permanent = True
+    return None, token
+
+
 # Ingestion & Safety layer (Government/Citizen architecture docs, Layer 2 —
 # "Rate Limiting", and the "Trust & Authenticity Layer" duplicate-detection
 # feature). Deliberately scoped to what's actually justified for an MVP:
@@ -658,24 +760,25 @@ _DUPLICATE_WINDOW_MINUTES = 5
 def _guard_against_spam_and_duplicates(raw_text: str):
     """
     Returns a Flask response (redirect) if this submission is an exact
-    duplicate of the same citizen's own recent report, or None if it's fine
-    to proceed. Skipped for anonymous ("anon") submissions — that bucket
-    isn't one real identity, so it can't be checked for self-duplication.
+    duplicate of the same identity's recent report, or None if it's fine
+    to proceed. Works for both real accounts and anonymous visitors — the
+    anonymous_token from _current_identity() is a stable per-browser
+    identity, not a shared "anon" bucket, so self-duplication can be
+    checked for anonymous submitters too.
     """
-    actor_id = current_actor_id()
+    citizen_account_id, anonymous_token = _current_identity()
     normalized = " ".join(raw_text.split()).lower()
-    if not actor_id or not normalized:
+    if not normalized:
         return None
 
-    from datetime import datetime, timezone, timedelta
+    from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=_DUPLICATE_WINDOW_MINUTES)
-    recent = (
-        Report.query
-        .filter(Report.citizen_id == actor_id, Report.created_at >= cutoff)
-        .order_by(Report.created_at.desc())
-        .limit(20)
-        .all()
-    )
+    query = Report.query.filter(Report.created_at >= cutoff)
+    if citizen_account_id:
+        query = query.filter(Report.citizen_account_id == citizen_account_id)
+    else:
+        query = query.filter(Report.anonymous_token == anonymous_token)
+    recent = query.order_by(Report.created_at.desc()).limit(20).all()
     for r in recent:
         if " ".join(r.original_raw_input.split()).lower() == normalized:
             flash("You already reported this — here's where it stands.", "info")
@@ -709,11 +812,17 @@ def _create_cluster_from_report(report: Report) -> DemandCluster:
         store_cluster_embedding(cluster.id, report.original_raw_input)
     except Exception as e:
         # Embedding failure doesn't block cluster creation — rollback the
-        # embedding write only, not the cluster itself.
+        # embedding write only, not the cluster itself. Queue a retry so
+        # the cluster doesn't stay permanently unmatchable via vector
+        # search just because Cohere hiccuped once.
         db.session.rollback()
         logger.warning("store_cluster_embedding failed (cluster still created): %s", e)
         db.session.add(cluster)
         db.session.flush()   # re-flush so cluster.id is valid again after rollback
+        from app.services.job_queue import enqueue_job
+        enqueue_job("retry_cluster_embedding", {
+            "cluster_id": cluster.id, "summary_text": report.original_raw_input,
+        })
 
     # Set centroid from the founding report's GPS, if available.
     # MUST run after the embedding try/except above — store_cluster_embedding()
@@ -737,7 +846,8 @@ def _add_contribution(report: Report, cluster_id: str, contrib_type: str):
     """Add a Contribution and update the Report status to Clustered."""
     contrib = Contribution(
         report_id=report.id,
-        citizen_id=report.citizen_id,
+        citizen_account_id=report.citizen_account_id,
+        anonymous_token=report.anonymous_token,
         demand_cluster_id=cluster_id,
         type=contrib_type,
     )

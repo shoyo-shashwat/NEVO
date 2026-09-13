@@ -30,23 +30,30 @@
         {% endif %}
       </p>
     </div>
+    <div class="gov-dashboard__head-illustration" aria-hidden="true">
+      <svg width="120" height="90"><use href="#{{ 'illus-hero-chart' if role == 'mp' else 'illus-hero-construction' }}"/></svg>
+    </div>
   </div>
 
   {# --- Quick-glance stat strip — Round 4 "dashboard is very empty" fix --- #}
   <div class="dashboard-stats">
     <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-signal"/></svg></span>
       <span class="dashboard-stat__value">{{ stats.active_signals }}</span>
       <span class="dashboard-stat__label">Active signals</span>
     </div>
     <div class="dashboard-stat dashboard-stat--critical">
+      <span class="dashboard-stat__icon dashboard-stat__icon--danger"><svg width="18" height="18"><use href="#icon-alert-triangle"/></svg></span>
       <span class="dashboard-stat__value">{{ stats.critical_count }}</span>
       <span class="dashboard-stat__label">Critical priority</span>
     </div>
     <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-clock"/></svg></span>
       <span class="dashboard-stat__value">{{ stats.awaiting_decision }}</span>
       <span class="dashboard-stat__label">Awaiting decision</span>
     </div>
     <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-clipboard-check"/></svg></span>
       <span class="dashboard-stat__value">{{ stats.decisions_recorded }}</span>
       <span class="dashboard-stat__label">Decisions recorded (all time)</span>
     </div>

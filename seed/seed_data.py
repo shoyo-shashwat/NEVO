@@ -12,19 +12,19 @@
 #   1. Countries (India, Brazil, Russia)
 #   2. AdministrativeRegions (one state + one district per country)
 #   3. Categories (6 fixed MVP categories)
-#   4. Demo actors (1 Citizen + 1 MP + 1 PlanningOfficer + 1 Admin per country)
-#   5. Reference data (InfrastructureDataPoint + DemographicDataPoint +
+#   4. Departments (India: health/water/pwd/education/environment)
+#   5. Demo accounts — real CitizenAccount/GovernmentAccount rows,
+#      is_demo=True, reachable via the one-click /login country-card picker
+#      (see app/auth/actors.py::DEMO_ACCOUNTS)
+#   6. Reference data (InfrastructureDataPoint + DemographicDataPoint +
 #      GovernmentInvestment rows for India/healthcare — enough for the
 #      Priority Evidence Card to render)
-#   6. REQUIRED DEMO BEAT (Progress Log §10 / §13.2):
+#   7. REQUIRED DEMO BEAT (Progress Log §10 / §13.2):
 #      One seeded DemandCluster for India/healthcare with:
 #        activeStatus = "UnderGovernmentReview"
 #        ~18 Verification rows of which 15 are "StillHappening"
 #        → community_sentiment yields ~83% still affected
 #      This produces the flagship "82% still affected / Under Review" moment.
-#
-# Actor rows are also loaded into auth/session._DEMO_ACTORS so the role
-# selector works immediately after seeding.
 
 import os
 import sys
@@ -48,7 +48,8 @@ from app.models.reference_data import (
     DemographicDataPoint,
     GovernmentInvestment,
 )
-from app.auth.session import load_demo_actors
+from app.models.auth_models import CitizenAccount, GovernmentAccount, Department
+from app.auth.security import hash_password
 
 app = create_app()
 
@@ -108,6 +109,19 @@ ID_ADMIN       = "actor-admin"
 
 # Demo beat cluster
 ID_CLUSTER_DEMO = "cluster-demo-india-health"
+
+# Shared password for every seeded is_demo=True account. Not a secret in any
+# meaningful sense — these are reviewer accounts on demo data, reachable
+# only through the one-click /login country-card picker anyway (real accounts
+# can never authenticate with a password through that path — see
+# app/auth/session.py::set_demo_session). Documented in README.md.
+DEMO_ACTOR_PASSWORD = "DemoPass!2026"
+
+_COUNTRY_ID_BY_CODE = {
+    "IN": ID_COUNTRY_IN,
+    "BR": ID_COUNTRY_BR,
+    "RU": ID_COUNTRY_RU,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -290,15 +304,79 @@ def seed_categories():
     print("  Categories: OK")
 
 
+def seed_departments():
+    """
+    Seed the department taxonomy department_officer accounts are scoped to.
+    India only for now — matches what already existed in the database
+    before this repo had any department-aware code (see
+    app/models/auth_models.py provenance note). Extend per-country as
+    department_officer accounts are provisioned for Brazil/Russia.
+    """
+    rows = [
+        ("dept-in-health", "Health", "health"),
+        ("dept-in-water", "Water & Sanitation", "water"),
+        ("dept-in-pwd", "Public Works (Roads & Electricity)", "pwd"),
+        ("dept-in-education", "Education", "education"),
+        ("dept-in-environment", "Environment & Waste", "environment"),
+    ]
+    for dept_id, name, code in rows:
+        if not _exists(Department, dept_id):
+            db.session.add(Department(id=dept_id, country_id=ID_COUNTRY_IN, name=name, code=code))
+    db.session.flush()
+    print("  Departments: OK")
+
+
 def seed_actors():
     """
-    Load demo actors from the single source of truth in app/auth/actors.py.
-    Actors are not DB rows — session-only identity (Progress Log §17.6).
+    Idempotently ensure every account in app/auth/actors.py::DEMO_ACCOUNTS
+    exists and is marked is_demo=True — reachable via the one-click /login
+    country-card picker. Looks accounts up by email (their natural key);
+    never overwrites an existing account's password_hash, so re-running
+    this script cannot lock anyone out of an account already in use.
     """
-    from app.auth.actors import DEMO_ACTORS
-    load_demo_actors(DEMO_ACTORS)
-    print("  Demo actors loaded into session registry: OK")
-    return DEMO_ACTORS
+    from app.auth.actors import DEMO_ACCOUNTS
+
+    dept_by_code = {d.code: d.id for d in Department.query.filter_by(country_id=ID_COUNTRY_IN).all()}
+
+    for a in DEMO_ACCOUNTS:
+        country_id = _COUNTRY_ID_BY_CODE[a["country_code"]]
+
+        if a["account_type"] == "citizen":
+            existing = CitizenAccount.query.filter_by(email=a["email"]).first()
+            if existing:
+                if not existing.is_demo:
+                    existing.is_demo = True
+                continue
+            db.session.add(CitizenAccount(
+                email=a["email"],
+                password_hash=hash_password(DEMO_ACTOR_PASSWORD),
+                full_name=a["full_name"],
+                country_id=country_id,
+                preferred_language="en",
+                consent_given_at=_now(),
+                consent_version="2026-09-13",
+                is_active=True,
+                is_demo=True,
+            ))
+        else:
+            existing = GovernmentAccount.query.filter_by(email=a["email"]).first()
+            if existing:
+                if not existing.is_demo:
+                    existing.is_demo = True
+                continue
+            db.session.add(GovernmentAccount(
+                email=a["email"],
+                password_hash=hash_password(DEMO_ACTOR_PASSWORD),
+                full_name=a["full_name"],
+                role=a["role"],
+                country_id=country_id,
+                department_id=dept_by_code.get(a.get("department_code")),
+                is_active=True,
+                is_demo=True,
+            ))
+    db.session.flush()
+    print(f"  Demo accounts ensured (password: {DEMO_ACTOR_PASSWORD}): OK")
+    return DEMO_ACCOUNTS
 
 
 def seed_reference_data():
@@ -420,7 +498,7 @@ def seed_demo_beat():
     for i, cid in enumerate(citizen_ids):
         r = Report(
             id=f"demo-report-in-{i+1}",
-            citizen_id=cid,
+            anonymous_token=cid,
             country_id=ID_COUNTRY_IN,
             region_id=ID_REGION_IN_MH_NASHIK,
             category_id=ID_CAT_HEALTH,
@@ -444,7 +522,7 @@ def seed_demo_beat():
         db.session.add(Contribution(
             id=f"contrib-{rid}",
             report_id=rid,
-            citizen_id=cid,
+            anonymous_token=cid,
             demand_cluster_id=ID_CLUSTER_DEMO,
             type="joined",
         ))
@@ -466,7 +544,7 @@ def seed_demo_beat():
         cid = verif_citizens[i % len(verif_citizens)]
         db.session.add(Verification(
             id=f"verif-demo-{i+1}",
-            citizen_id=cid,
+            anonymous_token=cid,
             demand_cluster_id=ID_CLUSTER_DEMO,
             state=state,
         ))
@@ -501,6 +579,7 @@ def run():
         seed_regions()
         seed_district_regions()
         seed_categories()
+        seed_departments()
         seed_actors()
         seed_reference_data()
         seed_demo_beat()

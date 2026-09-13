@@ -10,18 +10,30 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 
 from app.config import Config
-from app.extensions import db, migrate
+from app.extensions import db, migrate, csrf, limiter
 
 
 def create_app(config_class=Config):
     app = Flask(__name__, template_folder="../templates")
     app.config.from_object(config_class)
 
+    # Session cookie hardening — HttpOnly is Flask's default; the rest are
+    # not. A short-ish permanent lifetime plus DB-backed session revocation
+    # (see app/auth/session.py) means a stolen cookie stops working the
+    # moment the session row is revoked, without waiting for cookie expiry.
+    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+    app.config.setdefault("SESSION_COOKIE_SECURE", not app.debug)
+    from datetime import timedelta
+    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(days=30))
+
     # ------------------------------------------------------------------
-    # 1. Extensions — db first, then migrate
+    # 1. Extensions — db first, then migrate, then security extensions
     # ------------------------------------------------------------------
     db.init_app(app)
     migrate.init_app(app, db)
+    csrf.init_app(app)
+    limiter.init_app(app)
 
     # ------------------------------------------------------------------
     # 2. Model discovery — must run inside app context so Flask-Migrate
@@ -31,15 +43,25 @@ def create_app(config_class=Config):
         from app import models as _models  # noqa: F401
 
     # ------------------------------------------------------------------
-    # 3. Blueprint registration — citizen at /citizen, government at /gov.
-    #    Coupling check: neither blueprint imports from the other.
-    #    Verified by grep before this file was written (Step 8 audit).
+    # 3. Blueprint registration — citizen at /citizen, government at /gov,
+    #    auth at the bare root (/signup, /signin, /logout, /account, ...).
+    #    Coupling check: neither citizen/ nor government/ imports from the
+    #    other. Verified by grep before this file was written (Step 8 audit).
     # ------------------------------------------------------------------
     from app.citizen import citizen_bp
     from app.government import government_bp
+    from app.auth import auth_bp
 
     app.register_blueprint(citizen_bp)    # url_prefix="/citizen" set in blueprint
     app.register_blueprint(government_bp)  # url_prefix="/gov" set in blueprint
+    app.register_blueprint(auth_bp)
+
+    # ------------------------------------------------------------------
+    # 3b. Load the current user (if any) on every request from the
+    #     DB-backed session record — see app/auth/session.py.
+    # ------------------------------------------------------------------
+    from app.auth.session import load_logged_in_user
+    app.before_request(load_logged_in_user)
 
     # ------------------------------------------------------------------
     # 4. Landing page ("/") + dedicated login page ("/login").
@@ -64,11 +86,16 @@ def create_app(config_class=Config):
 
     @app.route("/login", methods=["GET", "POST"])
     def login_page():
-        from app.auth.session import get_all_demo_actors, set_session
+        # One-click login for seeded is_demo=True accounts only — see
+        # app/auth/session.py::set_demo_session(). Real citizen/government
+        # accounts sign in at /signin or via an accepted invite; this path
+        # can never authenticate them (set_demo_session rejects is_demo=False
+        # rows even if someone guesses/forges an id).
+        from app.auth.session import get_all_demo_actors, set_demo_session
 
         if request.method == "POST":
             actor_id = request.form.get("actor_id", "").strip()
-            if not set_session(actor_id):
+            if not set_demo_session(actor_id):
                 flash("Unknown actor — please select one from the list.", "error")
                 return redirect(url_for("login_page"))
 
@@ -81,17 +108,23 @@ def create_app(config_class=Config):
         return render_template("login.html", actors=actors)
 
     # ------------------------------------------------------------------
-    # 5. load_demo_actors() called here — not only in seed_data.py.
-    #    This ensures the in-memory actor registry (_DEMO_ACTORS dict in
-    #    auth/session.py) is populated on every app boot, including on
-    #    Render after a restart, without needing to re-run the seed script.
-    #    Reads actor rows from the database; safe to call on every boot.
+    # 4b. Every dynamic (non-static) response is session-dependent — the
+    #     nav bar alone changes based on who's logged in — so none of it
+    #     may be cached by the browser. Without this, a browser can (and,
+    #     per a support session on 2026-09-13, did) keep serving a stale
+    #     cached page/redirect indefinitely, showing an entirely different
+    #     build than what the server currently returns. Static assets
+    #     (CSS/JS/images) are unaffected — Flask's static handler sets its
+    #     own cache headers separately.
     # ------------------------------------------------------------------
-    with app.app_context():
-        _bootstrap_demo_actors(app)
+    @app.after_request
+    def _no_cache_dynamic_responses(response):
+        if not request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
 
     # ------------------------------------------------------------------
-    # 6. Error handlers — friendly pages, no raw tracebacks on-screen
+    # 5. Error handlers — friendly pages, no raw tracebacks on-screen
     # ------------------------------------------------------------------
     @app.errorhandler(404)
     def not_found(e):
@@ -103,19 +136,3 @@ def create_app(config_class=Config):
         return render_template("errors/500.html"), 500
 
     return app
-
-
-# ---------------------------------------------------------------------------
-# Demo actor bootstrap — wiring only, no business logic
-# ---------------------------------------------------------------------------
-
-def _bootstrap_demo_actors(app):
-    """
-    Populate auth/session._DEMO_ACTORS from the single source of truth
-    in app/auth/actors.py.  Called on every app boot inside create_app()
-    so the role selector works immediately after startup on Render without
-    re-running the seed script (Progress Log §3 open item — now closed).
-    """
-    from app.auth.actors import DEMO_ACTORS
-    from app.auth.session import load_demo_actors
-    load_demo_actors(DEMO_ACTORS)

@@ -24,6 +24,7 @@
     <form method="POST" action="{{ url_for('citizen.report_flow') }}"
           enctype="multipart/form-data" id="report-form">
 
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="channel" id="channel-input" value="text">
       <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
       <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
@@ -100,6 +101,9 @@
           You can follow the whole journey from your timeline, including the final outcome.
         </li>
       </ol>
+      <div class="report-flow__sidebar-illustration" aria-hidden="true">
+        <svg width="100" height="120"><use href="#illus-hero-report"/></svg>
+      </div>
     </aside>
   </div>
 

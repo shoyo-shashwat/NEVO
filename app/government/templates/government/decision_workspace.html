@@ -22,6 +22,7 @@
   {% endif %}
 
   <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {# Action set differs by role and current workflow state #}
     <fieldset class="decision-options">
@@ -140,6 +141,7 @@
     </p>
     <form method="POST" action="{{ url_for('government.propose_project', cluster_id=cluster.id) }}"
           class="propose-project-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="project_name">Project name</label>
       <input type="text" name="project_name" id="project_name" required
              placeholder="e.g. Nashik Rural PHC Upgradation">
