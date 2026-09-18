@@ -72,18 +72,28 @@ def load_logged_in_user() -> None:
 
     g.user = account
     g.account_type = account_session.account_type
-    account_session.last_seen_at = now
 
     # Sync the client-side language choice (i18n.js sets a "nevo_lang"
     # cookie today, unread by the server) onto the real account, so a
     # citizen's language preference follows them across devices/sessions
     # instead of living only in one browser's cookie jar.
+    dirty = False
     if account_session.account_type == "citizen":
         cookie_lang = request.cookies.get("nevo_lang")
         if cookie_lang and cookie_lang != account.preferred_language:
             account.preferred_language = cookie_lang
+            dirty = True
 
-    db.session.commit()
+    # last_seen_at only needs minute-ish granularity — committing on every
+    # single request (each one a DB round trip against serverless Neon) was
+    # most of the "why is every page slow" cost. Throttle the write instead
+    # of skipping it, so revocation checks above still run on every request.
+    if account_session.last_seen_at is None or (now - account_session.last_seen_at) > timedelta(minutes=1):
+        account_session.last_seen_at = now
+        dirty = True
+
+    if dirty:
+        db.session.commit()
 
     _apply_legacy_session(account, account_session.account_type)
 

@@ -61,7 +61,18 @@ def create_app(config_class=Config):
     #     DB-backed session record — see app/auth/session.py.
     # ------------------------------------------------------------------
     from app.auth.session import load_logged_in_user
-    app.before_request(load_logged_in_user)
+
+    @app.before_request
+    def _load_logged_in_user_for_dynamic_routes():
+        # Static assets (CSS/JS/images) don't need the account looked up —
+        # skipping this here avoids a DB round trip (query + commit) per
+        # asset. A single page load pulls in a dozen+ static files, so this
+        # was turning "one page" into a dozen+ serialized DB hits against a
+        # serverless (auto-suspending) Neon instance. See 2026-09-18 perf
+        # investigation.
+        if request.path.startswith("/static/"):
+            return
+        return load_logged_in_user()
 
     # ------------------------------------------------------------------
     # 4. Landing page ("/") + dedicated login page ("/login").

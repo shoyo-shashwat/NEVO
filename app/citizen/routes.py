@@ -54,17 +54,35 @@ def home():
         .all()
     )
 
+    # Single round trip for both project counts — was two sequential
+    # .count() queries. Each DB round trip against the serverless (Neon)
+    # instance adds latency, and this page was issuing ~8 of them
+    # sequentially, which Lighthouse flagged as ~11.5s of document request
+    # latency. See 2026-09-18 perf investigation.
+    if country_id:
+        projects_tracked, projects_completed = db.session.query(
+            func.count(Project.id),
+            func.count(Project.id).filter(Project.status == "Completion"),
+        ).filter(Project.country_id == country_id).first()
+    else:
+        projects_tracked, projects_completed = 0, 0
+
     snapshot = {
         "participants": sum(c.unique_contributors for c in clusters),
         "active_demands": len(clusters),
-        "projects_tracked": Project.query.filter_by(country_id=country_id).count() if country_id else 0,
-        "projects_completed": Project.query.filter_by(country_id=country_id, status="Completion").count() if country_id else 0,
+        "projects_tracked": projects_tracked,
+        "projects_completed": projects_completed,
     }
 
     top_demands = sorted(clusters, key=lambda c: c.unique_contributors, reverse=True)[:3]
+    category_ids = {c.category_id for c in top_demands}
+    categories_by_id = (
+        {cat.id: cat for cat in Category.query.filter(Category.id.in_(category_ids)).all()}
+        if category_ids else {}
+    )
     top_demand_cards = []
     for c in top_demands:
-        cat = db.session.get(Category, c.category_id)
+        cat = categories_by_id.get(c.category_id)
         localities = c.affected_localities or []
         top_demand_cards.append({
             "cluster": c,
@@ -80,19 +98,21 @@ def home():
     personal = None
     if current_role() == "citizen" and current_actor_id():
         actor_id = current_actor_id()
-        reports_count = Report.query.filter_by(citizen_account_id=actor_id).count()
+        reports_count, joined_count, resolved_count = db.session.query(
+            db.session.query(func.count(Report.id))
+            .filter(Report.citizen_account_id == actor_id).scalar_subquery(),
+            db.session.query(func.count(Contribution.id))
+            .filter(Contribution.citizen_account_id == actor_id).scalar_subquery(),
+            db.session.query(func.count(func.distinct(Contribution.demand_cluster_id)))
+            .join(Outcome, Outcome.demand_cluster_id == Contribution.demand_cluster_id)
+            .filter(Contribution.citizen_account_id == actor_id, Outcome.status == "Verified")
+            .scalar_subquery(),
+        ).first()
         if reports_count:
-            joined_count = Contribution.query.filter_by(citizen_account_id=actor_id).count()
-            resolved_count = (
-                db.session.query(func.count(func.distinct(Contribution.demand_cluster_id)))
-                .join(Outcome, Outcome.demand_cluster_id == Contribution.demand_cluster_id)
-                .filter(Contribution.citizen_account_id == actor_id, Outcome.status == "Verified")
-                .scalar() or 0
-            )
             personal = {
                 "reports_submitted": reports_count,
                 "demands_joined": joined_count,
-                "issues_resolved": resolved_count,
+                "issues_resolved": resolved_count or 0,
             }
 
     return render_template(
