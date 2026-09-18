@@ -10,11 +10,15 @@
 #     No AI-generated text may populate this field under any circumstance.
 #     The form must source reason exclusively from request.form.
 
+import json
+from datetime import datetime, timezone
+
 from flask import render_template, request, session, redirect, url_for, flash
+from sqlalchemy import func
 
 from app.government import government_bp
 from app.extensions import db
-from app.auth.session import require_role, current_actor_id, current_role
+from app.auth.session import require_role, current_actor_id, current_role, current_user
 
 # Models — citizen-originated data read directly from models/, no citizen/ import
 from app.models.demand_cluster import DemandCluster
@@ -25,7 +29,7 @@ from app.models.shared import Category, Country, AdministrativeRegion, EventLog
 from app.models.auth_models import GovernmentAccount, Department, log_action
 
 # Services — scoring lives here only, never inlined in routes
-from app.services import gap_assessment, investment_alignment, priority_scoring
+from app.services import gap_assessment, investment_alignment, priority_scoring, development_insight, alignment_analytics
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +52,14 @@ def dashboard():
     Priorities" is actually ranked by priority, not merely by trend, and so
     "Investment/Intervention Gaps" reflects real alignment state rather than
     being folded into the other two sections.
+
+    Planning Officer's real home is now national_overview() (India-wide
+    lens) — redirect here so an old link/bookmark lands on the right page
+    rather than the MP-shaped constituency dashboard.
     """
+    if current_role() == "planning_officer":
+        return redirect(url_for("government.national_overview"))
+
     country_code = session.get("country_code", "IN")
     country = Country.query.filter_by(code=country_code).first()
     country_id = country.id if country else None
@@ -65,45 +76,7 @@ def dashboard():
         .all()
     )
 
-    cards = []
-    for c in clusters:
-        cat = db.session.get(Category, c.category_id)
-        sev = _dominant_severity(c.id)
-
-        # Same computed-fresh services evidence_detail() uses — Government §5.3.4:
-        # cheap enough at dashboard scale (<=20 clusters), and this is what makes
-        # "Top Priorities" and "Investment/Intervention Gaps" real signals rather
-        # than trend-only approximations.
-        gap = gap_assessment.calculate(c.id)
-        alignment = investment_alignment.calculate(c.id, gap_assessment=gap)
-        s1 = priority_scoring.stage1_confidence(gap, alignment)
-        s2 = priority_scoring.stage2_priority(
-            confidence=s1.confidence,
-            severity=sev,
-            population_affected=gap.population_affected,
-            gap_confidence=gap.confidence,
-            trend=c.trend,
-            alignment_state=alignment.state,
-        )
-
-        # "Pending decision" = cluster is actively in the government workflow
-        # but no GovernmentDecision has been recorded yet.
-        # review_status "NotReviewed" is NOT pending — it hasn't been opened.
-        # review_status "UnderReview" or "PendingValidation" means a government
-        # actor has opened it and it awaits a formal decision (Progress Log §13.3).
-        pending = c.review_status in ("UnderReview", "PendingValidation")
-        cards.append({
-            "cluster": c,
-            "category_name": cat.name if cat else "",
-            "category_code": cat.code if cat else "",
-            "total_reports": c.total_reports,
-            "unique_contributors": c.unique_contributors,
-            "sentiment": c.community_sentiment,
-            "dominant_severity": sev,
-            "pending_decision": pending,
-            "priority": s2.priority,
-            "alignment_state": alignment.state,
-        })
+    cards = [_build_cluster_card(c) for c in clusters]
 
     # Government §5 — four independent lenses over the same pool. A cluster can
     # legitimately answer more than one question at once (e.g. both the highest
@@ -165,6 +138,17 @@ def dashboard():
             .count() if country_id else 0,
     }
 
+    # Population-based investment-alignment breakdown (India-only MVP design
+    # decision — always the five states as separate percentages, never one
+    # collapsed "coverage score"). MP sees it scoped to their own
+    # constituency (GovernmentAccount.region_id); Planning Officer sees the
+    # country-wide picture — the same "my constituency" vs "India" split
+    # that scopes the four lenses above.
+    breakdown = None
+    if country_id:
+        mp_region_id, _, _ = _government_scope(country_id)
+        breakdown = alignment_analytics.calculate(country_id, region_id=mp_region_id)
+
     return render_template(
         "government/dashboard.html",
         role=role,
@@ -175,6 +159,7 @@ def dashboard():
         in_progress_projects=in_progress_projects,
         stats=stats,
         country_code=country_code,
+        breakdown=breakdown,
     )
 
 
@@ -202,6 +187,546 @@ def demand_map():
     )
 
 
+@government_bp.route("/map/projects-data")
+@require_role("mp", "planning_officer", "reviewer")
+def demand_map_projects_data():
+    """
+    GeoJSON endpoint for the Development Map's Projects layer (P0 —
+    markers/heatmap only, no boundary-polygon dependency; see the
+    India-only MVP design review's Atlas-vs-Map distinction).
+
+    Project has no geometry of its own (only an optional region_id, and
+    AdministrativeRegion itself has no stored coordinates — see
+    app/models/shared.py). Plotting a project at a fabricated "region
+    centroid" would be exactly the kind of invented precision this
+    codebase deliberately avoids elsewhere (gap_assessment.py,
+    investment_alignment.py). Instead, only projects with a
+    linked_demand_cluster_id are plotted — at that cluster's real,
+    citizen-report-derived centroid — since "this project addresses the
+    demand located here" is a claim the data actually supports. Projects
+    without a linked cluster are omitted from the map (not fabricated a
+    location), same discipline as unmatched regions in gap_assessment.py.
+    """
+    from geoalchemy2.functions import ST_AsGeoJSON
+
+    country_id = _country_id_from_session()
+
+    rows = (
+        db.session.query(
+            Project.id,
+            Project.name,
+            Project.status,
+            DemandCluster.category_id,
+            ST_AsGeoJSON(DemandCluster.centroid).label("geojson"),
+        )
+        .join(DemandCluster, Project.linked_demand_cluster_id == DemandCluster.id)
+        .filter(
+            Project.country_id == country_id,
+            DemandCluster.centroid.isnot(None),
+        )
+        .all()
+    )
+
+    features = []
+    for row in rows:
+        if not row.geojson:
+            continue
+        cat = db.session.get(Category, row.category_id)
+        features.append({
+            "type": "Feature",
+            "geometry": json.loads(row.geojson),
+            "properties": {
+                "id": row.id,
+                "name": row.name,
+                "status": row.status,
+                "category_code": cat.code if cat else "",
+            },
+        })
+
+    return {"type": "FeatureCollection", "features": features}
+
+
+def _country_id_from_session() -> str:
+    code = session.get("country_code", "IN")
+    country = Country.query.filter_by(code=code).first()
+    return country.id if country else None
+
+
+def _government_scope(country_id: str):
+    """
+    Resolve the current government session's geographic scope, in one place.
+
+    Returns (mp_region_id, expanded_region_ids, region_name):
+      - MP: (their own GovernmentAccount.region_id, that region + every
+        administrative descendant as a set, region name) — a cluster/report
+        scoped only to a district beneath the MP's state-level region still
+        counts as theirs. mp_region_id (unexpanded) is what
+        alignment_analytics.calculate(region_id=...) wants, since that
+        function does its own descendant expansion internally;
+        expanded_region_ids is what Python-side "is this cluster/report in
+        scope" membership checks want.
+      - Planning Officer / reviewer / admin: (None, None, None) — no
+        restriction, country-wide.
+
+    Every route below used to re-derive this independently ("if role ==
+    mp: get GovernmentAccount.region_id..."), and one of those four
+    independent copies used an exact-match instead of descendant-inclusive
+    matching — a real bug that silently dropped legitimate results before
+    it was caught. Centralizing it here means fixing the scoping rule once
+    fixes it everywhere, instead of relying on every call site staying in
+    sync by hand.
+    """
+    if current_role() != "mp":
+        return None, None, None
+    actor = current_user()
+    mp_region_id = getattr(actor, "region_id", None)
+    if not mp_region_id:
+        return None, None, None
+    expanded_region_ids = alignment_analytics._descendant_region_ids(country_id, mp_region_id)
+    region = db.session.get(AdministrativeRegion, mp_region_id)
+    return mp_region_id, expanded_region_ids, (region.name if region else None)
+
+
+def _cluster_in_mp_scope(cluster: DemandCluster) -> bool:
+    """
+    Authorization check, not just a list filter: an MP session must not be
+    able to view or act on a cluster outside their own constituency by
+    guessing/typing its URL directly. demand_intelligence()/citizen_voice()/
+    reports() already filter their *lists* to the MP's scope, but a direct
+    GET to /gov/demand/<cluster_id> or /gov/demand/<cluster_id>/decide
+    previously had no such check at all -- flagged in the post-Planning-
+    Officer-split hardening review. Planning Officer/reviewer are always
+    True (country-wide scope, no restriction).
+
+    A cluster with no region_ids at all (data gap, not a real region) is
+    treated as in-scope rather than silently 404/403ing an MP out of a
+    cluster that simply hasn't been geo-tagged yet.
+    """
+    if current_role() != "mp":
+        return True
+    country_id = cluster.country_id
+    _, mp_region_ids, _ = _government_scope(country_id)
+    if not mp_region_ids:
+        return True  # MP account has no region_id set -- nothing to restrict against
+    cluster_regions = set(cluster.region_ids or [])
+    if not cluster_regions:
+        return True
+    return bool(mp_region_ids & cluster_regions)
+
+
+# ---------------------------------------------------------------------------
+# Demand Intelligence — shared list view (MP: constituency-scoped via
+# GovernmentAccount.region_id; Planning Officer: country-wide). Same
+# underlying cluster-card data as the dashboard's four lenses, but here as a
+# single filterable/searchable list rather than four fixed groupings — the
+# piece neither role had before this (India-only MVP design review).
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/demand-intelligence")
+@require_role("mp", "planning_officer", "reviewer")
+def demand_intelligence():
+    country_id = _country_id_from_session()
+    role = current_role()
+
+    sector_filter = request.args.get("sector") or None
+    alignment_filter = request.args.get("alignment") or None
+    status_filter = request.args.get("status") or None
+
+    query = DemandCluster.query.filter(DemandCluster.country_id == country_id)
+    if sector_filter:
+        query = query.filter(DemandCluster.category_id == sector_filter)
+    if status_filter:
+        query = query.filter(DemandCluster.active_status == status_filter)
+    else:
+        query = query.filter(DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]))
+
+    # region_ids is a plain JSON column (not JSONB), so Postgres has no `@>`
+    # containment operator for it — filtering happens in Python after the
+    # fetch, same pattern as the alignment_filter below.
+    _, mp_region_ids, region_note = _government_scope(country_id)
+
+    clusters = query.order_by(DemandCluster.updated_at.desc()).limit(200).all()
+    if mp_region_ids:
+        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])][:100]
+    else:
+        clusters = clusters[:100]
+    cards = [_build_cluster_card(c) for c in clusters]
+
+    # Alignment filter applied after card-building since alignment_state is
+    # computed fresh, not a stored column.
+    if alignment_filter:
+        cards = [c for c in cards if c["alignment_state"] == alignment_filter]
+
+    categories = Category.query.all()
+
+    return render_template(
+        "government/demand_intelligence.html",
+        cards=cards,
+        categories=categories,
+        role=role,
+        region_note=region_note,
+        sector_filter=sector_filter,
+        alignment_filter=alignment_filter,
+        status_filter=status_filter,
+    )
+
+
+# ---------------------------------------------------------------------------
+# National Overview — Planning Officer's home screen. Distinct from MP's
+# "my constituency" dashboard.html: leads with India-wide demand
+# distribution and the alignment breakdown, not a constituency KPI strip.
+# See the India-only MVP design review's MP-vs-Planning-Officer information
+# architecture (different scope/lens over the same Demand Cluster
+# Intelligence object, not a separate implementation of it).
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/national-overview")
+@require_role("planning_officer")
+def national_overview():
+    country_id = _country_id_from_session()
+
+    clusters = (
+        DemandCluster.query
+        .filter(
+            DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+            DemandCluster.country_id == country_id,
+        )
+        .all()
+    )
+
+    # Sector distribution — real counts, category name resolved once per
+    # category rather than per cluster.
+    sector_counts: dict = {}
+    for c in clusters:
+        sector_counts[c.category_id] = sector_counts.get(c.category_id, 0) + 1
+    categories = {cat.id: cat for cat in Category.query.all()}
+    sector_distribution = sorted(
+        [
+            {"name": categories[cat_id].name, "count": count}
+            for cat_id, count in sector_counts.items() if cat_id in categories
+        ],
+        key=lambda x: x["count"], reverse=True,
+    )
+
+    stats = {
+        "active_clusters": len(clusters),
+        "increasing": len([c for c in clusters if c.trend == "increasing"]),
+        "decisions_recorded": GovernmentDecision.query.filter_by(country_id=country_id).count() if country_id else 0,
+        "projects_total": Project.query.filter_by(country_id=country_id).count() if country_id else 0,
+        "projects_completed": Project.query.filter_by(country_id=country_id, status="Completion").count() if country_id else 0,
+    }
+
+    breakdown = alignment_analytics.calculate(country_id) if country_id else None
+
+    # "Needs attention" — same pool, top 5 by priority, reusing the shared
+    # card builder (kept small: this is a summary screen, not the full list —
+    # that's demand_intelligence()).
+    needs_attention = sorted(
+        [_build_cluster_card(c) for c in clusters[:30]],  # cap: summary screen, not exhaustive
+        key=lambda card: _PRIORITY_RANK.get(card["priority"], 0),
+        reverse=True,
+    )[:5]
+
+    return render_template(
+        "government/national_overview.html",
+        stats=stats,
+        sector_distribution=sector_distribution,
+        breakdown=breakdown,
+        needs_attention=needs_attention,
+        country_code=session.get("country_code", "IN"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Investment Alignment — the five-state breakdown made a real analytical
+# surface (per the India-only MVP design review: "make this the backbone of
+# the government UI" rather than inventing another scoring framework).
+# Country-wide overall, plus a per-sector breakdown table so a Planning
+# Officer can see e.g. "healthcare is 70% unaddressed" at a glance.
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/investment-alignment")
+@require_role("mp", "planning_officer", "reviewer")
+def investment_alignment_view():
+    country_id = _country_id_from_session()
+
+    overall = alignment_analytics.calculate(country_id) if country_id else None
+
+    categories = Category.query.all()
+    by_sector = []
+    for cat in categories:
+        breakdown = alignment_analytics.calculate(country_id, category_id=cat.id) if country_id else None
+        if breakdown and breakdown.cluster_count:
+            by_sector.append({"category": cat, "breakdown": breakdown})
+    by_sector.sort(key=lambda row: row["breakdown"].cluster_count, reverse=True)
+
+    return render_template(
+        "government/investment_alignment.html",
+        overall=overall,
+        by_sector=by_sector,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Gap Analysis — "Development Gap Explorer": pick a sector + region, see the
+# evidence. Reuses gap_assessment.py / investment_alignment.py directly
+# against a synthetic query rather than a stored DemandCluster, since a
+# Planning Officer is exploring "what does the evidence say about this
+# sector+region combination" even where no cluster happens to exist yet.
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/gap-analysis")
+@require_role("mp", "planning_officer", "reviewer")
+def gap_analysis():
+    country_id = _country_id_from_session()
+    categories = Category.query.all()
+    regions = AdministrativeRegion.query.filter_by(country_id=country_id).order_by(AdministrativeRegion.name).all() if country_id else []
+
+    sector_id = request.args.get("sector") or None
+    region_id = request.args.get("region") or None
+
+    result = None
+    if sector_id and region_id:
+        # Reuse the same region-matching machinery gap_assessment.py uses,
+        # but against a single region rather than a cluster's region_ids —
+        # this endpoint has no cluster to read region_ids from, so it asks
+        # the question directly: "what evidence exists for this sector in
+        # this region (and its administrative ancestors)?"
+        from app.services.region_matching import fetch_ancestor_chains, resolve_region_matches
+        from app.models.reference_data import InfrastructureDataPoint, DemographicDataPoint
+
+        chains = fetch_ancestor_chains([region_id])
+        infra_candidates = InfrastructureDataPoint.query.filter_by(category_id=sector_id, country_id=country_id).all()
+        demo_candidates = DemographicDataPoint.query.filter_by(category_id=sector_id, country_id=country_id).all()
+        infra_match = resolve_region_matches([region_id], infra_candidates, chains)
+        demo_match = resolve_region_matches([region_id], demo_candidates, chains)
+
+        # Clusters already located in this region+sector, for demand context
+        # and investment relevance — same region-relevance filter investment_
+        # alignment.py uses, applied directly here since there's no single
+        # cluster to hand to that service.
+        from app.services.investment_alignment import _filter_relevant_investments
+        from app.models.reference_data import GovernmentInvestment
+        inv_candidates = GovernmentInvestment.query.filter_by(category_id=sector_id, country_id=country_id).all()
+        relevant_investments, investment_scope = _filter_relevant_investments(
+            inv_candidates, region_ids=[region_id], chains=chains,
+        )
+
+        matching_clusters = [
+            c for c in DemandCluster.query.filter_by(category_id=sector_id, country_id=country_id).all()
+            if region_id in (c.region_ids or [])
+        ]
+
+        result = {
+            "sector": db.session.get(Category, sector_id),
+            "region": db.session.get(AdministrativeRegion, region_id),
+            "infra_row": infra_match.matched_rows[0] if infra_match.matched_rows else None,
+            "infra_scope": infra_match.scope_label,
+            "demo_row": demo_match.matched_rows[0] if demo_match.matched_rows else None,
+            "demo_scope": demo_match.scope_label,
+            "investments": relevant_investments,
+            "investment_scope": investment_scope,
+            "clusters": matching_clusters,
+            "total_reports": sum(c.total_reports for c in matching_clusters),
+            "total_contributors": sum(c.unique_contributors for c in matching_clusters),
+        }
+
+    return render_template(
+        "government/gap_analysis.html",
+        categories=categories,
+        regions=regions,
+        sector_id=sector_id,
+        region_id=region_id,
+        result=result,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Policy Insights — Planning Officer's highest-level page. Reuses
+# development_insight.py (already evidence-composed, never a fresh LLM
+# call) across the top-priority clusters nationally, rather than
+# introducing a second "insight" concept. Explicitly not framed as "AI
+# tells government what to do" (India-only MVP design review) — each card
+# is Insight + underlying evidence + link to the actual cluster.
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/policy-insights")
+@require_role("planning_officer", "mp", "reviewer")
+def policy_insights():
+    country_id = _country_id_from_session()
+
+    clusters = (
+        DemandCluster.query
+        .filter(
+            DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+            DemandCluster.country_id == country_id,
+        )
+        .order_by(DemandCluster.updated_at.desc())
+        .limit(30)
+        .all()
+    )
+
+    cards = [_build_cluster_card(c) for c in clusters]
+    top_cards = sorted(cards, key=lambda card: _PRIORITY_RANK.get(card["priority"], 0), reverse=True)[:8]
+
+    insights = []
+    for card in top_cards:
+        cluster = card["cluster"]
+        gap = gap_assessment.calculate(cluster.id)
+        alignment = investment_alignment.calculate(cluster.id, gap_assessment=gap)
+        insight = development_insight.calculate(cluster.id, gap=gap, alignment=alignment)
+        insights.append({
+            "cluster": cluster,
+            "category_name": card["category_name"],
+            "category_code": card["category_code"],
+            "priority": card["priority"],
+            "alignment_state": alignment.state,
+            "insight": insight,
+        })
+
+    return render_template("government/policy_insights.html", insights=insights)
+
+
+# ---------------------------------------------------------------------------
+# Citizen Voice — deliberately separate from Demand Intelligence (India-only
+# MVP design review): Demand Intelligence answers "what does the aggregated
+# data show", Citizen Voice answers "what are constituents actually
+# saying." Raw problem_summary_en text (the multilingual "common format"
+# field — see citizen/routes.py module docstring), never the aggregated
+# evidence. MP-scoped to their own constituency's region when the account
+# has one set; Planning Officer sees the country-wide feed.
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/citizen-voice")
+@require_role("mp", "planning_officer", "reviewer")
+def citizen_voice():
+    from app.models.citizen_models import Report
+    from datetime import timedelta
+
+    country_id = _country_id_from_session()
+    role = current_role()
+
+    query = (
+        Report.query
+        .filter(Report.country_id == country_id, Report.problem_summary_en.isnot(None))
+    )
+
+    _, mp_region_ids, region_note = _government_scope(country_id)
+    if mp_region_ids:
+        query = query.filter(Report.region_id.in_(mp_region_ids))
+
+    recent_reports = query.order_by(Report.created_at.desc()).limit(30).all()
+
+    report_cards = []
+    for r in recent_reports:
+        cat = db.session.get(Category, r.category_id) if r.category_id else None
+        report_cards.append({
+            "report": r,
+            "category_name": cat.name if cat else "",
+        })
+
+    # Emerging themes — real counts, worded as "increased over the period",
+    # never "trend" (that would imply statistical significance this simple
+    # count comparison doesn't establish). Last 30 days vs the 30 days
+    # before that, same country/region scope as the feed above.
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=30)
+    prior_start = now - timedelta(days=60)
+
+    def _category_counts(start, end):
+        q = (
+            db.session.query(Report.category_id, func.count(Report.id))
+            .filter(Report.country_id == country_id, Report.created_at >= start, Report.created_at < end)
+        )
+        if mp_region_ids:
+            q = q.filter(Report.region_id.in_(mp_region_ids))
+        return dict(q.group_by(Report.category_id).all())
+
+    recent_counts = _category_counts(window_start, now)
+    prior_counts = _category_counts(prior_start, window_start)
+
+    emerging_themes = []
+    categories_by_id = {c.id: c for c in Category.query.all()}
+    for cat_id, recent_count in recent_counts.items():
+        prior_count = prior_counts.get(cat_id, 0)
+        if recent_count >= 3 and recent_count > prior_count:
+            cat = categories_by_id.get(cat_id)
+            if cat:
+                emerging_themes.append({
+                    "category_name": cat.name,
+                    "recent_count": recent_count,
+                    "prior_count": prior_count,
+                })
+    emerging_themes.sort(key=lambda t: t["recent_count"] - t["prior_count"], reverse=True)
+
+    return render_template(
+        "government/citizen_voice.html",
+        report_cards=report_cards,
+        region_note=region_note,
+        role=role,
+        emerging_themes=emerging_themes[:3],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reports — Constituency/National Development Brief. P2 per the India-only
+# MVP design review ("presentation output, not proof of the core
+# intelligence — build it once the intelligence screens are good"). HTML
+# on-screen, print-to-PDF via the browser rather than a document-generation
+# engine — same MVP scope call the design review made.
+# ---------------------------------------------------------------------------
+
+@government_bp.route("/reports")
+@require_role("mp", "planning_officer", "reviewer")
+def reports():
+    country_id = _country_id_from_session()
+    role = current_role()
+
+    mp_region_id, mp_region_ids, region_note = _government_scope(country_id)
+
+    clusters = DemandCluster.query.filter(
+        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+        DemandCluster.country_id == country_id,
+    ).all()
+    if mp_region_ids:
+        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+
+    cards = [_build_cluster_card(c) for c in clusters]
+    top_cards = sorted(cards, key=lambda card: _PRIORITY_RANK.get(card["priority"], 0), reverse=True)[:10]
+    unaddressed = [card for card in cards if card["alignment_state"] in _UNADDRESSED_STATES]
+
+    breakdown = alignment_analytics.calculate(country_id, region_id=mp_region_id) if country_id else None
+
+    project_query = Project.query.filter_by(country_id=country_id)
+    projects_completed = project_query.filter_by(status="Completion").count()
+    projects_total = project_query.count()
+
+    outcomes_verified = (
+        Outcome.query.join(Project, Outcome.project_id == Project.id)
+        .filter(Project.country_id == country_id, Outcome.status == "Verified")
+        .count()
+    )
+
+    return render_template(
+        "government/reports.html",
+        role=role,
+        region_note=region_note,
+        generated_at=datetime.now(timezone.utc),
+        stats={
+            "total_demands": len(clusters),
+            "total_reports": sum(c.total_reports for c in clusters),
+            "total_contributors": sum(c.unique_contributors for c in clusters),
+            "unaddressed_count": len(unaddressed),
+            "projects_total": projects_total,
+            "projects_completed": projects_completed,
+            "outcomes_verified": outcomes_verified,
+        },
+        breakdown=breakdown,
+        top_cards=top_cards,
+        unaddressed=unaddressed[:10],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Screen 3 — Priority / Evidence Detail
 # ---------------------------------------------------------------------------
@@ -214,6 +739,9 @@ def evidence_detail(cluster_id):
     All scoring computed fresh per request — no caching, no background jobs.
     """
     cluster = DemandCluster.query.get_or_404(cluster_id)
+    if not _cluster_in_mp_scope(cluster):
+        flash("This demand is outside your constituency.", "error")
+        return redirect(url_for("government.dashboard"))
     cat = db.session.get(Category, cluster.category_id)
 
     # Compute fresh — three service calls, pure functions, no side effects.
@@ -231,6 +759,10 @@ def evidence_detail(cluster_id):
         trend=cluster.trend,
         alignment_state=alignment.state,
     )
+    insight = development_insight.calculate(cluster_id, gap=gap, alignment=alignment)
+
+    from app.services import demand_evolution
+    evolution = demand_evolution.calculate(cluster_id)
 
     # Existing decision if any
     existing_decision = (
@@ -250,14 +782,28 @@ def evidence_detail(cluster_id):
     # give an officer real, readable-in-English context regardless of the
     # underlying reports' language.
     from app.models.citizen_models import Report
-    sample_reports = (
+    # Fetch a larger pool and dedupe by text in Python (not a DB-level
+    # DISTINCT, to stay portable) -- otherwise several citizens reporting
+    # the same problem in near-identical words (common for a templated
+    # demo, and plausible for real citizens describing the same visible
+    # issue) shows as the same quote repeated 3 times, which reads as a
+    # bug even though each row is a real report.
+    _candidate_reports = (
         Report.query
         .join(Contribution, Contribution.report_id == Report.id)
         .filter(Contribution.demand_cluster_id == cluster_id, Report.problem_summary_en.isnot(None))
         .order_by(Report.created_at.desc())
-        .limit(3)
+        .limit(20)
         .all()
     )
+    sample_reports = []
+    _seen_texts = set()
+    for r in _candidate_reports:
+        if r.problem_summary_en not in _seen_texts:
+            _seen_texts.add(r.problem_summary_en)
+            sample_reports.append(r)
+        if len(sample_reports) == 3:
+            break
 
     return render_template(
         "government/evidence_detail.html",
@@ -271,6 +817,8 @@ def evidence_detail(cluster_id):
         existing_decision=existing_decision,
         role=current_role(),
         sample_reports=sample_reports,
+        insight=insight,
+        evolution=evolution,
     )
 
 
@@ -292,6 +840,9 @@ def decision_workspace(cluster_id):
     No AI-generated text may populate GovernmentDecision.reason.
     """
     cluster = DemandCluster.query.get_or_404(cluster_id)
+    if not _cluster_in_mp_scope(cluster):
+        flash("This demand is outside your constituency.", "error")
+        return redirect(url_for("government.dashboard"))
     role = current_role()
 
     existing_decision = (
@@ -373,6 +924,7 @@ def decision_workspace(cluster_id):
     # GET — collect available projects for the "Link project" dropdown
     projects = Project.query.filter_by(country_id=cluster.country_id).all()
     category = db.session.get(Category, cluster.category_id)
+    gap = gap_assessment.calculate(cluster_id)
 
     return render_template(
         "government/decision_workspace.html",
@@ -381,6 +933,7 @@ def decision_workspace(cluster_id):
         role=role,
         existing_decision=existing_decision,
         projects=projects,
+        gap=gap,
     )
 
 
@@ -729,6 +1282,47 @@ def provision_government_user():
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _build_cluster_card(c: DemandCluster) -> dict:
+    """
+    Shared cluster-summary card builder — the shape _cluster_card.html
+    expects. Factored out of dashboard() so demand_intelligence() (and any
+    future page) computes the exact same evidence/alignment/priority for a
+    cluster rather than each route re-deriving it slightly differently.
+    Same services evidence_detail() uses (Government §5.3.4).
+    """
+    cat = db.session.get(Category, c.category_id)
+    sev = _dominant_severity(c.id)
+
+    gap = gap_assessment.calculate(c.id)
+    alignment = investment_alignment.calculate(c.id, gap_assessment=gap)
+    s1 = priority_scoring.stage1_confidence(gap, alignment)
+    s2 = priority_scoring.stage2_priority(
+        confidence=s1.confidence,
+        severity=sev,
+        population_affected=gap.population_affected,
+        gap_confidence=gap.confidence,
+        trend=c.trend,
+        alignment_state=alignment.state,
+    )
+
+    # "Pending decision" = cluster is actively in the government workflow
+    # but no GovernmentDecision has been recorded yet.
+    pending = c.review_status in ("UnderReview", "PendingValidation")
+    return {
+        "cluster": c,
+        "category_name": cat.name if cat else "",
+        "category_code": cat.code if cat else "",
+        "total_reports": c.total_reports,
+        "unique_contributors": c.unique_contributors,
+        "sentiment": c.community_sentiment,
+        "dominant_severity": sev,
+        "pending_decision": pending,
+        "priority": s2.priority,
+        "confidence": s1.confidence,
+        "alignment_state": alignment.state,
+    }
+
 
 def _dominant_severity(cluster_id: str):
     """

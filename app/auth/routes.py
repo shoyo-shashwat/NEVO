@@ -279,9 +279,32 @@ def account():
         .all()
     )
 
+    # Personal contribution summary — same query pattern as
+    # citizen/routes.py::home()/impact(), reused here so Profile can show
+    # real "My impact" numbers instead of inventing new ones.
+    personal = None
+    if account_type == "citizen":
+        from sqlalchemy import func
+        from app.models.citizen_models import Report, Contribution
+        from app.models.government_models import Outcome
+
+        reports_count = Report.query.filter_by(citizen_account_id=acc.id).count()
+        joined_count = Contribution.query.filter_by(citizen_account_id=acc.id).count()
+        resolved_count = (
+            db.session.query(func.count(func.distinct(Contribution.demand_cluster_id)))
+            .join(Outcome, Outcome.demand_cluster_id == Contribution.demand_cluster_id)
+            .filter(Contribution.citizen_account_id == acc.id, Outcome.status == "Verified")
+            .scalar() or 0
+        )
+        personal = {
+            "reports_submitted": reports_count,
+            "demands_joined": joined_count,
+            "issues_resolved": resolved_count,
+        }
+
     return render_template(
         "auth/account.html", user=acc, account_type=account_type,
-        active_sessions=active_sessions,
+        active_sessions=active_sessions, personal=personal,
     )
 
 

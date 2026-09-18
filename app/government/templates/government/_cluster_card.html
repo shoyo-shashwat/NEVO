@@ -38,6 +38,7 @@
     <p class="cluster-card__sentiment">
       Community says: <strong>{{ card.sentiment.still_affected_pct }}% still affected</strong>
     </p>
+    <div class="cluster-card__sentiment-bar"><span style="width: {{ card.sentiment.still_affected_pct }}%"></span></div>
   {% endif %}
 
   <a href="{{ url_for('government.evidence_detail', cluster_id=c.id) }}"

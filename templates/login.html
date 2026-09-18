@@ -220,7 +220,7 @@
 {% set selected_role = request.args.get('role', 'citizen') %}
 {% set role_label = {'citizen':'CITIZEN','mp':'MP / POLICYMAKER','planning_officer':'PLANNING OFFICER'}.get(selected_role, 'CITIZEN') %}
 {% set role_icon = {'citizen':'icon-people','mp':'icon-shield','planning_officer':'icon-building'}.get(selected_role, 'icon-people') %}
-{% set countries = [('IN','india.png','India'),('BR','brazil.png','Brazil'),('RU','russia.png','Russia')] %}
+{% set countries = [('IN','india.png','India')] %}
 
 <div class="nevo-bg" aria-hidden="true">
   <img class="nevo-bg__left"  src="{{ url_for('static', filename='img/login.png') }}"  alt="">

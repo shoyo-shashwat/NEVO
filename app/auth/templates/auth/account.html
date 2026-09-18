@@ -1,22 +1,77 @@
 {% extends "base.html" %}
-{% block title %}My account — BRICS People First{% endblock %}
+{% block title %}Profile — Nevo{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="auth-page" style="max-width:560px;">
-  <span class="auth-page__eyebrow">Account</span>
-  <h1>{{ user.full_name or user.email }}</h1>
-  <p class="auth-page__sub">
-    {{ user.email }} &middot; {{ session.get('job_title') or (account_type | title) }}
-    {% if user.is_demo %} &middot; Demo account{% endif %}
-  </p>
+<div class="profile-page">
+  <header class="page-header profile-hero">
+    <div>
+      <span class="page-eyebrow">Profile</span>
+      <h1 class="page-title">Hi, <em>{{ (user.full_name or user.email).split(' ')[0] }}</em>!</h1>
+      <p class="profile-hero__meta">
+        {{ user.email }} &middot; {{ session.get('job_title') or (account_type | title) }}
+        {% if user.is_demo %} &middot; Demo account{% endif %}
+      </p>
+      <p class="page-description">Your voice helps build stronger, more responsive communities.</p>
+    </div>
+  </header>
+
+  <div class="profile-grid">
+    <section class="profile-card">
+      <div class="profile-card__head">
+        <h2 class="profile-card__title">My details</h2>
+      </div>
+      <div class="auth-session-row"><span>Phone</span><span class="auth-session-row__meta">{{ user.phone or "Not provided" }}</span></div>
+      <div class="auth-session-row"><span>Language</span><span class="auth-session-row__meta">{{ {'en':'English','hi':'हिन्दी'}.get(user.preferred_language, user.preferred_language) }}</span></div>
+      <div class="auth-session-row"><span>Location</span><span class="auth-session-row__meta">{{ user.country.name if user.country else "Not set" }}</span></div>
+      <div class="auth-session-row"><span>Member since</span><span class="auth-session-row__meta">{{ user.created_at.strftime('%B %Y') }}</span></div>
+      {% if account_type == 'citizen' %}
+        <a href="{{ url_for('citizen.impact') }}" class="btn btn--secondary profile-card__cta">
+          <svg width="14" height="14"><use href="#icon-clipboard-check"/></svg> See my contributions &amp; impact
+          <svg width="14" height="14"><use href="#icon-arrow-right"/></svg>
+        </a>
+      {% endif %}
+    </section>
+
+    {% if personal %}
+      <section class="profile-card">
+        <div class="profile-card__head">
+          <h2 class="profile-card__title">My impact</h2>
+        </div>
+        <p class="page-description">A quick look at your contributions.</p>
+        <div class="profile-impact-kpis">
+          <div class="profile-impact-kpis__card profile-impact-kpis__card--citizen">
+            <span class="profile-impact-kpis__icon"><svg width="18" height="18"><use href="#icon-clipboard-check"/></svg></span>
+            <span class="profile-impact-kpis__value">{{ personal.reports_submitted }}</span>
+            <span class="profile-impact-kpis__label">Reports submitted</span>
+          </div>
+          <div class="profile-impact-kpis__card profile-impact-kpis__card--info">
+            <span class="profile-impact-kpis__icon"><svg width="18" height="18"><use href="#icon-people"/></svg></span>
+            <span class="profile-impact-kpis__value">{{ personal.demands_joined }}</span>
+            <span class="profile-impact-kpis__label">Demands supported</span>
+          </div>
+          <div class="profile-impact-kpis__card profile-impact-kpis__card--success">
+            <span class="profile-impact-kpis__icon"><svg width="18" height="18"><use href="#icon-check"/></svg></span>
+            <span class="profile-impact-kpis__value">{{ personal.issues_resolved }}</span>
+            <span class="profile-impact-kpis__label">Issues resolved</span>
+          </div>
+        </div>
+        <p class="profile-quote">
+          <span class="profile-quote__mark">&ldquo;</span>
+          Small actions from citizens create big changes in our communities.&rdquo;
+        </p>
+      </section>
+    {% endif %}
+  </div>
 
   {% if not user.is_demo %}
-  <div class="auth-card" style="margin-bottom:20px;">
-    <h2 style="margin:0 0 16px;font:700 15px/1.4 'Inter',system-ui,sans-serif;color:var(--color-ink);">Change password</h2>
+  <section class="profile-card" style="margin-top:20px;">
+    <div class="profile-card__head">
+      <h2 class="profile-card__title">Change password</h2>
+    </div>
     <form method="POST" action="{{ url_for('auth.account') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="change_password">
@@ -36,11 +91,25 @@
 
       <button type="submit" class="btn btn--secondary">Update password</button>
     </form>
-  </div>
+  </section>
   {% endif %}
 
-  <div class="auth-card">
-    <h2 style="margin:0 0 16px;font:700 15px/1.4 'Inter',system-ui,sans-serif;color:var(--color-ink);">Active sessions</h2>
+  <section class="profile-card profile-card--sessions" style="margin-top:20px;">
+    <div class="profile-card__head">
+      <div>
+        <h2 class="profile-card__title">Active sessions</h2>
+        <p class="page-description">Devices where your account is currently signed in.</p>
+      </div>
+      {% if active_sessions|length > 1 %}
+        <form method="POST" action="{{ url_for('auth.account') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="logout_other_sessions">
+          <button type="submit" class="btn btn--secondary btn--small">
+            <svg width="14" height="14"><use href="#icon-arrow-right"/></svg> Log out from all devices
+          </button>
+        </form>
+      {% endif %}
+    </div>
     {% for s in active_sessions %}
       <div class="auth-session-row">
         <span>{{ s.user_agent or "Unknown device" }}</span>
@@ -49,15 +118,7 @@
     {% else %}
       <p class="auth-field__hint">No active sessions found.</p>
     {% endfor %}
-
-    {% if active_sessions|length > 1 %}
-    <form method="POST" action="{{ url_for('auth.account') }}" style="margin-top:16px;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="hidden" name="action" value="logout_other_sessions">
-      <button type="submit" class="btn btn--secondary btn--small">Sign out of other sessions</button>
-    </form>
-    {% endif %}
-  </div>
+  </section>
 
   <p class="auth-links">
     <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">

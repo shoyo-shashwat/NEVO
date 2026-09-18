@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Investment Alignment — BRICS People First{% endblock %}
+
+{% block content %}
+{% set CAT_ICONS = {
+  'water_sanitation': 'icon-cat-water',
+  'roads_transport': 'icon-cat-road',
+  'electricity_utilities': 'icon-cat-electricity',
+  'education_access': 'icon-cat-education',
+  'waste_environment': 'icon-cat-waste',
+  'healthcare_access': 'icon-cat-health',
+} %}
+<div class="investment-alignment-page">
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <span class="gov-dashboard__role-badge"><svg width="13" height="13"><use href="#icon-chart"/></svg> Investment alignment</span>
+      <h1 class="page-title">Investment alignment</h1>
+      <p class="page-hint" style="margin-top: 0;">
+        Every identified demand cluster classified into one of five alignment states, weighted by the population
+        each cluster represents — never collapsed into a single "coverage score."
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-po-invest-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  {% if overall and overall.total_population %}
+    <div class="alignment-breakdown">
+      <div class="alignment-breakdown__head">
+        <span class="alignment-breakdown__title"><svg width="13" height="13"><use href="#icon-chart"/></svg> Overall — {{ overall.scope_label }}</span>
+        <span class="alignment-breakdown__pop">{{ "{:,}".format(overall.total_population) }} people represented by identified demand</span>
+      </div>
+      <div class="alignment-bar" title="{{ overall.methodology }}">
+        {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+          {% set pct = overall.by_state_pct.get(state, 0) %}
+          {% if pct > 0 %}<span class="alignment-bar__seg alignment-bar__seg--{{ state | lower }}" style="width: {{ pct }}%"></span>{% endif %}
+        {% endfor %}
+      </div>
+      <div class="alignment-breakdown__legend">
+        {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+          <a href="{{ url_for('government.demand_intelligence', alignment=state) }}" class="alignment-breakdown__legend-item">
+            <span class="alignment-breakdown__dot alignment-breakdown__dot--{{ state | lower }}"></span>
+            {{ state | replace('_', ' ') | title }} {{ overall.by_state_pct.get(state, 0) }}%
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="alignment-methodology-card">
+      <span class="alignment-methodology-card__icon"><svg width="16" height="16"><use href="#icon-shield"/></svg></span>
+      <div>
+        <strong>About this metric</strong>
+        <p class="alignment-methodology">{{ overall.methodology }}</p>
+      </div>
+    </div>
+  {% else %}
+    <p class="empty-state">No population data available yet.</p>
+  {% endif %}
+
+  <section class="evidence-section">
+    <h2><span class="evidence-section__icon"><svg width="14" height="14"><use href="#icon-building"/></svg></span> By sector</h2>
+    <p class="dashboard-section__hint" style="margin-bottom: 0.9rem;">Population coverage by investment alignment state, for each sector.</p>
+    <div class="sector-alignment-table">
+      {% for row in by_sector %}
+        <div class="sector-alignment-row">
+          <span class="sector-alignment-row__icon"><svg width="15" height="15"><use href="#{{ CAT_ICONS.get(row.category.code, 'icon-cat-default') }}"/></svg></span>
+          <span class="sector-alignment-row__name">{{ row.category.name }}</span>
+          {% if row.breakdown.total_population %}
+            <div class="alignment-bar alignment-bar--small" title="{{ row.breakdown.methodology }}">
+              {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+                {% set pct = row.breakdown.by_state_pct.get(state, 0) %}
+                {% if pct > 0 %}<span class="alignment-bar__seg alignment-bar__seg--{{ state | lower }}" style="width: {{ pct }}%"></span>{% endif %}
+              {% endfor %}
+            </div>
+            <span class="sector-alignment-row__unaddressed">{{ row.breakdown.not_addressed_pct }}% not currently addressed</span>
+          {% else %}
+            <span class="sector-alignment-row__empty">No population data</span>
+          {% endif %}
+          <a href="{{ url_for('government.demand_intelligence', sector=row.category.id) }}" class="btn btn--secondary btn--small">
+            View clusters <svg width="12" height="12"><use href="#icon-arrow-right"/></svg>
+          </a>
+        </div>
+      {% else %}
+        <p class="empty-state empty-state--small">No sectors with active demand yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="gov-dashboard__banner">
+    <div>
+      <p class="gov-dashboard__banner-title">Better data. Fairer development.</p>
+      <p class="gov-dashboard__banner-desc">This analysis helps identify where investment is reaching people — and where more action is needed.</p>
+    </div>
+    <div class="gov-dashboard__banner-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-po-invest-banner.png') }}')" aria-hidden="true"></div>
+  </div>
+</div>
+{% endblock %}

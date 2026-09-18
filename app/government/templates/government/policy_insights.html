@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Policy Insights — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="policy-insights-page">
+  {% set CAT_ICONS = {
+    'water_sanitation': 'icon-cat-water',
+    'roads_transport': 'icon-cat-road',
+    'electricity_utilities': 'icon-cat-electricity',
+    'education_access': 'icon-cat-education',
+    'waste_environment': 'icon-cat-waste',
+    'healthcare_access': 'icon-cat-health',
+  } %}
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <span class="gov-dashboard__role-badge"><svg width="13" height="13"><use href="#icon-mic"/></svg> Evidence to action</span>
+      <h1 class="page-title">Policy insights</h1>
+      <p class="page-hint" style="margin-top: 0;">
+        Evidence-based summaries of the highest-priority development gaps right now — the system surfaces evidence
+        and options, not decisions. Every insight links back to its underlying evidence.
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-po-policy-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  {% if not insights %}
+    <p class="empty-state">No active demand clusters to summarise yet.</p>
+  {% endif %}
+
+  <div class="policy-insight-list">
+    {% for item in insights %}
+      <div class="policy-insight-card">
+        <span class="policy-insight-card__icon"><svg width="22" height="22"><use href="#{{ CAT_ICONS.get(item.category_code, 'icon-cat-default') }}"/></svg></span>
+        <div class="policy-insight-card__body">
+          <div class="policy-insight-card__head">
+            <span class="priority-chip priority-chip--{{ item.priority | lower }}">{{ item.priority }}</span>
+            <span class="cluster-card__category">{{ item.category_name }}</span>
+            <span class="cluster-card__alignment cluster-card__alignment--{{ item.alignment_state | lower | replace('_', '-') }}">
+              {{ item.alignment_state | replace('_', ' ') | title }}
+            </span>
+          </div>
+          <p class="policy-insight-card__narrative">{{ item.insight.narrative }}</p>
+          {% if item.insight.potential_interventions %}
+            <div class="policy-insight-card__interventions">
+              <span class="policy-insight-card__interventions-label">
+                <svg width="13" height="13"><use href="#icon-shield"/></svg> Potential interventions
+              </span>
+              <div class="policy-insight-card__interventions-chips">
+                {% for option in item.insight.potential_interventions[:3] %}
+                  <span class="policy-insight-chip">{{ option }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+        <a href="{{ url_for('government.evidence_detail', cluster_id=item.cluster.id) }}" class="policy-insight-card__link">
+          View evidence <svg width="12" height="12"><use href="#icon-arrow-right"/></svg>
+        </a>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if insights %}
+    <div class="gov-dashboard__banner">
+      <div>
+        <p class="gov-dashboard__banner-title">From evidence to policy, for a more equitable India.</p>
+        <p class="gov-dashboard__banner-desc">These insights are generated from real citizen voices and official data. They highlight what the evidence shows and possible ways forward — not decisions.</p>
+      </div>
+      <div class="gov-dashboard__banner-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-po-policy-banner.png') }}')" aria-hidden="true"></div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

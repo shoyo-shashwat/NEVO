@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Citizen Voice — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="citizen-voice-page">
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <span class="gov-dashboard__role-badge"><svg width="13" height="13"><use href="#icon-mic"/></svg> Citizen voice</span>
+      <h1 class="page-title">Citizen voice</h1>
+      <p class="page-hint" style="margin-top: 0;">
+        {% if role == 'mp' and region_note %}
+          What people in {{ region_note }} are actually saying — raw reports, not aggregated evidence.
+          For the aggregated picture, see Demand Intelligence.
+        {% else %}
+          What citizens are actually saying nationwide — raw reports, not aggregated evidence.
+          For the aggregated picture, see Demand Intelligence.
+        {% endif %}
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-voice-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  {% if emerging_themes %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-alert-triangle"/></svg> Emerging themes</h2>
+      <p class="dashboard-section__hint">Early signals from recent citizen reports. These indicate topics that may be growing and need attention.</p>
+      {% for theme in emerging_themes %}
+        <p class="emerging-theme">
+          <span class="emerging-theme__icon"><svg width="15" height="15"><use href="#icon-chart"/></svg></span>
+          <span class="emerging-theme__text"><strong>{{ theme.category_name }}</strong> reports increased from {{ theme.prior_count }} to {{ theme.recent_count }}
+          over the last 30 days, compared to the 30 days before that.</span>
+          <span class="emerging-theme__badge">+{{ theme.recent_count - theme.prior_count }}</span>
+        </p>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-mic"/></svg> Recent citizen reports</h2>
+    <p class="dashboard-section__hint">Individual reports from citizens{{ ' in ' + region_note if role == 'mp' and region_note else ' nationwide' }}, listed most recently. These are raw voices, not aggregated data.</p>
+    {% if not report_cards %}
+      <p class="empty-state">No citizen reports with a processed summary yet.</p>
+    {% endif %}
+    <div class="citizen-voice-list">
+      {% for item in report_cards %}
+        <div class="citizen-voice-card">
+          <div class="citizen-voice-card__head">
+            <span class="citizen-voice-card__quote-icon">&ldquo;</span>
+            <span class="cluster-card__category">{{ item.category_name }}</span>
+            <span class="citizen-voice-card__date">{{ item.report.created_at.strftime('%d %b %Y') }}</span>
+          </div>
+          <p class="citizen-voice-card__quote">&ldquo;{{ item.report.problem_summary_en }}&rdquo;</p>
+          {% if item.report.original_language and item.report.original_language != 'en' %}
+            <span class="evidence-sentiment__official">(reported in {{ item.report.original_language | upper }}, shown here in English)</span>
+          {% endif %}
+          <span class="citizen-voice-card__byline"><svg width="12" height="12"><use href="#icon-people"/></svg> Citizen report</span>
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if report_cards %}
+    <div class="gov-dashboard__banner">
+      <div>
+        <p class="gov-dashboard__banner-title">Every voice matters</p>
+        <p class="gov-dashboard__banner-desc">These are real experiences from people{{ ' across ' + region_note if role == 'mp' and region_note else ' nationwide' }}. Together, they help build a clearer picture of local needs.</p>
+      </div>
+      <div class="gov-dashboard__banner-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-voice-banner.png') }}')" aria-hidden="true"></div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

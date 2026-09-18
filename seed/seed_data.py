@@ -148,17 +148,23 @@ def seed_countries():
             administrative_hierarchy_adapter="india_v1",
             status="active",
         ),
+        # BR/RU kept as inactive, not deleted — India-only product scope for
+        # now (2026), but demo accounts/data for these already exist and
+        # dropping the rows would cascade-delete them. status="inactive"
+        # removes them from every active user-facing picker (signup's
+        # Country.query.filter_by(status="active") is the only place that
+        # reads this field) without touching existing FKs.
         Country(
             id=ID_COUNTRY_BR, code="BR", name="Brazil",
             supported_languages="pt,en",
             administrative_hierarchy_adapter="brazil_v1",
-            status="active",
+            status="inactive",
         ),
         Country(
             id=ID_COUNTRY_RU, code="RU", name="Russia",
             supported_languages="ru,en",
             administrative_hierarchy_adapter="russia_v1",
-            status="active",
+            status="inactive",
         ),
     ]
     for r in rows:
@@ -503,6 +509,16 @@ def seed_demo_beat():
             region_id=ID_REGION_IN_MH_NASHIK,
             category_id=ID_CAT_HEALTH,
             original_raw_input=(
+                "There is no proper healthcare facility in our area. "
+                "The nearest hospital is very far and we cannot afford transport."
+            ),
+            # Already English, so problem_summary_en is the same text — this
+            # field exists for the multilingual "common format" case
+            # (non-English original_language), but every citizen-facing
+            # screen that reads it (evidence_detail.html, citizen_voice.html)
+            # filters on problem_summary_en being non-null, so it still needs
+            # to be populated here for the demo cluster's reports to show up.
+            problem_summary_en=(
                 "There is no proper healthcare facility in our area. "
                 "The nearest hospital is very far and we cannot afford transport."
             ),

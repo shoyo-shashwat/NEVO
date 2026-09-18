@@ -21,7 +21,13 @@
 (function () {
   'use strict';
 
-  var LANGS = { en: 'English', hi: 'हिन्दी', pt: 'Português', ru: 'Русский' };
+  // India-only product scope (2026) — pt/ru translation entries remain in
+  // DICT below (harmless, unreachable dead data) rather than being stripped
+  // line-by-line from ~300 entries; LANGS is the actual source of truth for
+  // which languages are selectable, and the language-restore guard below
+  // (`if (!LANGS[lang]) lang = DEFAULT`) means a stale "pt"/"ru" cookie from
+  // before this change falls back to English cleanly, not a broken state.
+  var LANGS = { en: 'English', hi: 'हिन्दी' };
   var STORAGE_KEY = 'nevo_lang';
   var DEFAULT = 'en';
 
@@ -57,7 +63,7 @@
       { hi: 'हर रिपोर्ट को दर्ज होने से लेकर सामूहिक माँग और सरकारी निर्णय तक ट्रैक किया जाता है।',
         pt: 'Cada relato é acompanhado desde o envio até a demanda da comunidade e a decisão do governo.',
         ru: 'Каждое обращение отслеживается от подачи до коллективного запроса и решения властей.' },
-    'Countries live':        { hi: 'सक्रिय देश', pt: 'Países ativos', ru: 'Стран онлайн' },
+    'Government roles':      { hi: 'सरकारी भूमिकाएँ' },
     'Issue categories':      { hi: 'समस्या श्रेणियाँ', pt: 'Categorias de problemas', ru: 'Категорий проблем' },
     'Timeline stages tracked': { hi: 'ट्रैक किए गए चरण', pt: 'Etapas acompanhadas', ru: 'Отслеживаемых этапов' },
     'Who are you signing in as?':

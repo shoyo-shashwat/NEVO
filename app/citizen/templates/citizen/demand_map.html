@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Community Demand Map — BRICS People First{% endblock %}
+{% block title %}Demand Map — Nevo{% endblock %}
 
 {% block head %}
   {# Leaflet — lightweight, no framework. Vendored locally under
@@ -22,33 +22,42 @@
 } %}
 
 <div class="map-page">
-  <h1>Community demand map</h1>
-  <p class="page-hint">
-    Every pin is a collective demand cluster in {{ country_code }}, not an individual complaint —
-    filter by category, or click a pin for details.
-  </p>
+  <header class="page-header map-hero">
+    <div>
+      <span class="page-eyebrow">Map</span>
+      <h1 class="page-title">Community demand map</h1>
+      <p class="page-description">
+        Every pin is a collective demand cluster in {{ country_code }}, not an individual complaint —
+        filter by category, or click a pin for details.
+      </p>
+    </div>
+    <div class="map-hero__art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-map-hero.png') }}')"></div>
+  </header>
 
-  <div class="dashboard-stats map-stats">
-    <div class="dashboard-stat">
-      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-signal"/></svg></span>
-      <span class="dashboard-stat__value" id="map-stat-total">–</span>
-      <span class="dashboard-stat__label">Active clusters</span>
+  <div class="impact-kpis map-stats">
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--info"><svg width="16" height="16"><use href="#icon-signal"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-total">–</span>
+      <span class="impact-kpis__label">Active clusters</span>
     </div>
-    <div class="dashboard-stat">
-      <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-map"/></svg></span>
-      <span class="dashboard-stat__value" id="map-stat-categories">–</span>
-      <span class="dashboard-stat__label">Categories active</span>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--success"><svg width="16" height="16"><use href="#icon-map"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-categories">–</span>
+      <span class="impact-kpis__label">Categories active</span>
     </div>
-    <div class="dashboard-stat">
-      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-chart"/></svg></span>
-      <span class="dashboard-stat__value" id="map-stat-increasing">–</span>
-      <span class="dashboard-stat__label">Trending up</span>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--citizen"><svg width="16" height="16"><use href="#icon-chart"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-increasing">–</span>
+      <span class="impact-kpis__label">Trending up</span>
     </div>
   </div>
 
   <div class="map-layout">
     <aside class="map-sidebar">
-      <h2 class="map-sidebar__title">Categories</h2>
+      <div class="map-sidebar__head">
+        <h2 class="map-sidebar__title">Filter by category</h2>
+        <button type="button" id="map-reset-filters" class="map-sidebar__reset">Reset filters</button>
+      </div>
       <ul class="map-category-list">
         <li class="map-category-item map-category-item--active" data-cat="">
           <span class="map-category-item__icon"><svg width="15" height="15"><use href="#icon-map"/></svg></span>
@@ -70,7 +79,10 @@
     </div>
 
     <aside class="map-feed">
-      <h2 class="map-feed__title">Active near you</h2>
+      <div class="map-sidebar__head">
+        <h2 class="map-feed__title">Active near you</h2>
+        <a href="{{ url_for('citizen.community') }}" class="map-sidebar__reset">View as list →</a>
+      </div>
       <ul class="map-feed-list" id="map-feed-list">
         <li class="map-feed-empty">Loading…</li>
       </ul>
@@ -208,6 +220,13 @@
       loadData();
     });
   });
+
+  var resetBtn = document.getElementById('map-reset-filters');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function () {
+      document.querySelector('.map-category-item[data-cat=""]').click();
+    });
+  }
 
   loadData();
 }());

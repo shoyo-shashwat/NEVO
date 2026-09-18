@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Demand Intelligence — BRICS People First{% endblock %}
+
+{% block content %}
+<div class="demand-intelligence">
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <span class="gov-dashboard__role-badge"><svg width="13" height="13"><use href="#icon-chart"/></svg> Demand intelligence</span>
+      <h1 class="page-title">Demand intelligence</h1>
+      <p class="page-hint" style="margin-top: 0;">
+        {% if role == 'mp' and region_note %}
+          Every collective demand in {{ region_note }} — filter and search across the full list, not just the dashboard's top picks.
+        {% else %}
+          Every collective demand across the country — filter and search across the full list, not just the dashboard's top picks.
+        {% endif %}
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-demand-intel-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  <form method="GET" class="di-filters">
+    <div class="di-filters__field">
+      <label for="di-sector">Sector</label>
+      <select name="sector" id="di-sector" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">All sectors</option>
+        {% for cat in categories %}
+          <option value="{{ cat.id }}" {% if sector_filter == cat.id %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="di-filters__field">
+      <label for="di-alignment">Alignment state</label>
+      <select name="alignment" id="di-alignment" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">All alignment states</option>
+        {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+          <option value="{{ state }}" {% if alignment_filter == state %}selected{% endif %}>{{ state | replace('_', ' ') | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="di-filters__field">
+      <label for="di-status">Status</label>
+      <select name="status" id="di-status" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">Active + under review</option>
+        {% for status in ['Active', 'UnderGovernmentReview', 'Deferred', 'ActionTaken', 'Resolved'] %}
+          <option value="{{ status }}" {% if status_filter == status %}selected{% endif %}>{{ status | replace('UnderGovernmentReview', 'Under Review') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <a href="{{ url_for('government.demand_intelligence') }}" class="di-filters__clear">Clear filters</a>
+  </form>
+
+  <p class="di-count">{{ cards | length }} result{{ 's' if cards | length != 1 }}</p>
+
+  {% if not cards %}
+    <p class="empty-state">No demand clusters match these filters.</p>
+  {% endif %}
+
+  <div class="di-list">
+    {% for card in cards %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+  </div>
+
+  {% if cards %}
+    <div class="gov-dashboard__banner">
+      <div>
+        <p class="gov-dashboard__banner-title">Turning demand data into action</p>
+        <p class="gov-dashboard__banner-desc">Explore citizen needs, understand what matters most, and help drive real change in {{ region_note if role == 'mp' and region_note else 'your country' }}.</p>
+      </div>
+      <div class="gov-dashboard__banner-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-demand-intel-banner.png') }}')" aria-hidden="true"></div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

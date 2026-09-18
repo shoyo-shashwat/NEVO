@@ -4,6 +4,7 @@ Flask monolith: citizen complaints → aggregated collective demand → governme
 
 ## Setup (local dev)
 
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate

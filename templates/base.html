@@ -12,7 +12,10 @@
   {% block head %}{% endblock %}
 </head>
 {% set _wide_endpoints = ['government.dashboard', 'government.demand_map', 'government.projects_outcomes',
-                          'government.admin', 'citizen.community', 'citizen.demand_map'] %}
+                          'government.admin', 'citizen.community', 'citizen.demand_map', 'citizen.impact',
+                          'government.demand_intelligence', 'government.national_overview',
+                          'government.investment_alignment_view', 'government.gap_analysis',
+                          'government.policy_insights', 'government.citizen_voice'] %}
 <body class="{% if session.get('role') in ['mp','planning_officer','admin','reviewer'] %}theme-gov{% else %}theme-citizen{% endif %}{% if request.endpoint in _wide_endpoints %} layout-wide{% endif %}">
 
 <!-- Shared inline icon sprite — no external icon library, kept dependency-free -->
@@ -128,9 +131,25 @@
 
     <nav class="site-nav-primary" aria-label="Main">
       {% if is_gov %}
-        <a href="{{ url_for('government.dashboard') }}" class="site-nav-primary__link {% if request.endpoint == 'government.dashboard' %}site-nav-primary__link--active{% endif %}">Dashboard</a>
-        <a href="{{ url_for('government.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
-        <a href="{{ url_for('government.projects_outcomes') }}" class="site-nav-primary__link {% if request.endpoint == 'government.projects_outcomes' %}site-nav-primary__link--active{% endif %}">Projects</a>
+        {% if session.get('role') == 'planning_officer' %}
+          {# Planning Officer — India-wide lens, distinct from MP's constituency view #}
+          <a href="{{ url_for('government.national_overview') }}" class="site-nav-primary__link {% if request.endpoint == 'government.national_overview' %}site-nav-primary__link--active{% endif %}">National Overview</a>
+          <a href="{{ url_for('government.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+          <a href="{{ url_for('government.demand_intelligence') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_intelligence' %}site-nav-primary__link--active{% endif %}">Demand Intelligence</a>
+          <a href="{{ url_for('government.gap_analysis') }}" class="site-nav-primary__link {% if request.endpoint == 'government.gap_analysis' %}site-nav-primary__link--active{% endif %}">Gap Analysis</a>
+          <a href="{{ url_for('government.investment_alignment_view') }}" class="site-nav-primary__link {% if request.endpoint == 'government.investment_alignment_view' %}site-nav-primary__link--active{% endif %}">Investment Alignment</a>
+          <a href="{{ url_for('government.projects_outcomes') }}" class="site-nav-primary__link {% if request.endpoint == 'government.projects_outcomes' %}site-nav-primary__link--active{% endif %}">Projects</a>
+          <a href="{{ url_for('government.policy_insights') }}" class="site-nav-primary__link {% if request.endpoint == 'government.policy_insights' %}site-nav-primary__link--active{% endif %}">Policy Insights</a>
+          <a href="{{ url_for('government.reports') }}" class="site-nav-primary__link {% if request.endpoint == 'government.reports' %}site-nav-primary__link--active{% endif %}">Reports</a>
+        {% else %}
+          {# MP / reviewer — constituency lens #}
+          <a href="{{ url_for('government.dashboard') }}" class="site-nav-primary__link {% if request.endpoint == 'government.dashboard' %}site-nav-primary__link--active{% endif %}">Dashboard</a>
+          <a href="{{ url_for('government.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+          <a href="{{ url_for('government.demand_intelligence') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_intelligence' %}site-nav-primary__link--active{% endif %}">Demand Intelligence</a>
+          <a href="{{ url_for('government.citizen_voice') }}" class="site-nav-primary__link {% if request.endpoint == 'government.citizen_voice' %}site-nav-primary__link--active{% endif %}">Citizen Voice</a>
+          <a href="{{ url_for('government.projects_outcomes') }}" class="site-nav-primary__link {% if request.endpoint == 'government.projects_outcomes' %}site-nav-primary__link--active{% endif %}">Projects</a>
+          <a href="{{ url_for('government.reports') }}" class="site-nav-primary__link {% if request.endpoint == 'government.reports' %}site-nav-primary__link--active{% endif %}">Reports</a>
+        {% endif %}
         {% if session.get('role') == 'admin' %}
           <a href="{{ url_for('government.admin') }}" class="site-nav-primary__link {% if request.endpoint == 'government.admin' %}site-nav-primary__link--active{% endif %}">Admin</a>
         {% endif %}
@@ -140,6 +159,10 @@
         <a href="{{ url_for('citizen.community') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.community' %}site-nav-primary__link--active{% endif %}">Community</a>
         <a href="{{ url_for('citizen.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
         <a href="{{ url_for('citizen.my_timeline') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.my_timeline' %}site-nav-primary__link--active{% endif %}">My Timeline</a>
+        <a href="{{ url_for('citizen.impact') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.impact' %}site-nav-primary__link--active{% endif %}">Impact</a>
+        {% if session.get('actor_id') %}
+          <a href="{{ url_for('auth.account') }}" class="site-nav-primary__link {% if request.endpoint == 'auth.account' %}site-nav-primary__link--active{% endif %}">Profile</a>
+        {% endif %}
       {% endif %}
     </nav>
 

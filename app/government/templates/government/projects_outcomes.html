@@ -3,14 +3,13 @@
 
 {% block content %}
 <div class="projects-outcomes">
-  <div class="gov-dashboard__head">
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
     <div>
-      <h1>Projects &amp; outcomes</h1>
-      <p class="page-hint">Every intervention linked to a citizen demand, its implementation status, and whether the outcome has been verified against the ground.</p>
+      <span class="gov-dashboard__role-badge"><svg width="13" height="13"><use href="#icon-chart"/></svg> Projects &amp; outcomes</span>
+      <h1 class="page-title">Projects &amp; outcomes</h1>
+      <p class="page-hint" style="margin-top: 0;">Every intervention linked to a citizen demand, its implementation status, and whether the outcome has been verified against the ground.</p>
     </div>
-    <div class="gov-dashboard__head-illustration" aria-hidden="true">
-      <svg width="120" height="90"><use href="#illus-hero-construction"/></svg>
-    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-projects-hero.png') }}')" aria-hidden="true"></div>
   </div>
 
   {% if project_data %}
@@ -19,21 +18,29 @@
       <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-clipboard-check"/></svg></span>
       <span class="dashboard-stat__value">{{ project_stats.total }}</span>
       <span class="dashboard-stat__label">Total projects</span>
+      <span class="dashboard-stat__sub">Interventions linked to citizen demands</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
     </div>
     <div class="dashboard-stat">
       <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-clock"/></svg></span>
       <span class="dashboard-stat__value">{{ project_stats.in_progress }}</span>
       <span class="dashboard-stat__label">In progress</span>
+      <span class="dashboard-stat__sub">Actively being implemented</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
     </div>
     <div class="dashboard-stat">
-      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-clock"/></svg></span>
+      <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-check"/></svg></span>
       <span class="dashboard-stat__value">{{ project_stats.completed }}</span>
       <span class="dashboard-stat__label">Completed</span>
+      <span class="dashboard-stat__sub">Implementation finished</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
     </div>
     <div class="dashboard-stat dashboard-stat--verified">
       <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-check"/></svg></span>
       <span class="dashboard-stat__value">{{ project_stats.verified_outcomes }}</span>
       <span class="dashboard-stat__label">Verified outcomes</span>
+      <span class="dashboard-stat__sub">Outcomes confirmed on the ground</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
     </div>
   </div>
   {% endif %}
@@ -58,14 +65,24 @@
       {# Implementation stepper — Round 4 "very empty" fix: a quick visual read
          of where a project sits, without opening the Update panel. #}
       {% set stages = ['Planning', 'Approval', 'Tender', 'Construction', 'Completion'] %}
+      {% set stage_icons = ['icon-clipboard-check', 'icon-people', 'icon-chart', 'icon-building', 'icon-check'] %}
       {% set current_index = stages.index(p.status) if p.status in stages else 0 %}
-      <ol class="project-stepper">
-        {% for stage in stages %}
-          <li class="project-stepper__step {% if loop.index0 < current_index %}project-stepper__step--done{% elif loop.index0 == current_index %}project-stepper__step--active{% endif %}">
-            {{ stage }}
-          </li>
-        {% endfor %}
-      </ol>
+      <div class="project-stepper">
+        <div class="project-stepper__track">
+          <div class="project-stepper__track-fill" style="width: {{ (current_index / (stages|length - 1) * 100) if stages|length > 1 else 0 }}%"></div>
+        </div>
+        <ol class="project-stepper__list">
+          {% for stage in stages %}
+            <li class="project-stepper__step {% if loop.index0 < current_index %}project-stepper__step--done{% elif loop.index0 == current_index %}project-stepper__step--active{% endif %}">
+              <span class="project-stepper__icon"><svg width="16" height="16"><use href="#{{ stage_icons[loop.index0] }}"/></svg></span>
+              <span class="project-stepper__label">{{ stage }}</span>
+              <span class="project-stepper__caption">
+                {% if loop.index0 < current_index %}Done{% elif loop.index0 == current_index %}Current stage{% else %}Not started{% endif %}
+              </span>
+            </li>
+          {% endfor %}
+        </ol>
+      </div>
 
       {% if cluster %}
         <p class="project-card__demand">
@@ -89,22 +106,31 @@
       <div class="project-outcome">
         {% if outcome %}
           {% if outcome.status == 'Verified' and outcome.after_indicator %}
-            <p class="outcome--verified">Outcome: {{ outcome.after_indicator }}</p>
-            {% if outcome.impact_percent %}
-              <p class="outcome__impact">{{ outcome.impact_percent }}% improvement</p>
-            {% endif %}
+            <p class="outcome-tip outcome-tip--verified">
+              <svg width="16" height="16"><use href="#icon-check"/></svg>
+              <span>
+                <strong>Outcome: {{ outcome.after_indicator }}</strong>
+                {% if outcome.impact_percent %}<span class="outcome__impact">{{ outcome.impact_percent }}% improvement</span>{% endif %}
+              </span>
+            </p>
           {% else %}
-            <p class="outcome--waiting">Awaiting outcome data</p>
+            <p class="outcome-tip">
+              <svg width="16" height="16"><use href="#icon-shield"/></svg>
+              <span><strong>Awaiting outcome data</strong><span>Update progress, add milestones and record outcomes as implementation advances.</span></span>
+            </p>
           {% endif %}
         {% else %}
-          <p class="outcome--waiting">Awaiting outcome data</p>
+          <p class="outcome-tip">
+            <svg width="16" height="16"><use href="#icon-shield"/></svg>
+            <span><strong>Awaiting outcome data</strong><span>Update progress, add milestones and record outcomes as implementation advances.</span></span>
+          </p>
         {% endif %}
       </div>
 
       {# Update implementation / record outcome — Government §3.
          Both actions available to MP and Planning Officer. #}
       <details class="project-actions">
-        <summary>Update</summary>
+        <summary>Update <span class="project-actions__hint">Update project status, add milestones and record outcome indicators.</span></summary>
 
         <form method="POST" action="{{ url_for('government.update_project_status', project_id=p.id) }}"
               class="project-update-form">

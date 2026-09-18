@@ -1,14 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Community Issues — BRICS People First{% endblock %}
+{% block title %}Community — Nevo{% endblock %}
 
 {% block content %}
+{% set CAT_ICONS = {
+  'water_sanitation': 'icon-cat-water',
+  'roads_transport': 'icon-cat-road',
+  'electricity_utilities': 'icon-cat-electricity',
+  'education_access': 'icon-cat-education',
+  'waste_environment': 'icon-cat-waste',
+  'healthcare_access': 'icon-cat-health',
+} %}
 <div class="community-demand">
-  <h1>Community issues</h1>
-  <p class="page-hint">
-    Every card below is a collective demand — many individual reports on the same
-    problem, merged into one voice. The bigger the numbers, the stronger the case
-    for government action.
-  </p>
+  <header class="page-header">
+    <span class="page-eyebrow">Community</span>
+    <h1 class="page-title">What people around you are asking for</h1>
+    <p class="page-description">
+      Every card below is a collective demand — many individual reports on the same
+      problem, merged into one voice. The bigger the numbers, the stronger the case
+      for government action.
+    </p>
+  </header>
 
   {# Category filter — single row of buttons, no elaborate filter panel #}
   <div class="filter-bar">
@@ -17,6 +28,7 @@
     {% for cat in categories %}
       <a href="{{ url_for('citizen.community', category=cat.id) }}"
          class="filter-btn {% if active_category == cat.id %}filter-btn--active{% endif %}">
+        <svg width="13" height="13"><use href="#{{ CAT_ICONS.get(cat.code, 'icon-cat-default') }}"/></svg>
         {{ cat.name }}
       </a>
     {% endfor %}
@@ -24,50 +36,138 @@
 
   {% if not cluster_data %}
     <p class="empty-state">No active community issues yet. <a href="{{ url_for('citizen.report_flow') }}">Be the first to report one.</a></p>
-  {% endif %}
+  {% else %}
 
-  <div class="cluster-grid">
-  {% for item in cluster_data %}
-    {% set c = item.cluster %}
-    <div class="cluster-card">
-      <div class="cluster-card__header">
-        <span class="cluster-card__category">{{ item.category_name }}</span>
-        <span class="cluster-card__status cluster-card__status--{{ c.active_status | lower }}">
-          {{ c.active_status | replace('UnderGovernmentReview', 'Under Review') }}
-        </span>
+    {# Featured demand — the top item, given full visual weight — alongside a
+       community-wide activity panel (ChatGPT design-partner spec: pair the
+       most important demand with real community context rather than
+       stacking every item at equal weight). #}
+    {% set featured = cluster_data[0] %}
+    {% set fc = featured.cluster %}
+    <div class="community-featured">
+      <div class="demand-feature">
+        <div class="demand-feature__visual">
+          <svg width="34" height="34"><use href="#{{ CAT_ICONS.get(featured.category_code, 'icon-cat-default') }}"/></svg>
+        </div>
+        <div class="demand-feature__body">
+          <div class="demand-feature__chips">
+            <span class="status status--active">{{ featured.category_name }}</span>
+            {% if fc.trend == 'increasing' %}<span class="status status--increasing">↑ Increasing</span>{% endif %}
+          </div>
+          <h2 class="demand-feature__title">{{ featured.category_name }} concern in {{ (fc.affected_localities[0] if fc.affected_localities else 'your area') }}</h2>
+          <p class="demand-feature__meta">
+            <svg width="13" height="13"><use href="#icon-pin"/></svg>
+            {{ fc.affected_localities | join(' · ') }}
+          </p>
+          <div class="demand-feature__stats">
+            <span>{{ featured.unique_contributors }} people</span>
+            <span>{{ featured.total_reports }} reports</span>
+          </div>
+          {% if featured.sentiment.total > 0 %}
+            <p class="cluster-card__sentiment">
+              Community says: <strong>{{ featured.sentiment.still_affected_pct }}% still affected</strong>
+            </p>
+          {% endif %}
+          <div class="demand-feature__actions">
+            {% if featured.already_supported %}
+              <p class="support-demand-btn--done">
+                <svg width="14" height="14"><use href="#icon-clipboard-check"/></svg> You've added your voice to this
+              </p>
+            {% else %}
+              <form method="POST" action="{{ url_for('citizen.support_cluster', cluster_id=fc.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn--primary btn--small">
+                  <svg width="14" height="14"><use href="#icon-people"/></svg> I need this too
+                </button>
+              </form>
+            {% endif %}
+          </div>
+          {% if session.get('role') == 'citizen' %}
+            <form method="POST" action="{{ url_for('citizen.verify_cluster', cluster_id=fc.id) }}" class="verif-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <span class="verif-form__label">Still happening?</span>
+              {% for state, label in [('StillHappening','Yes'), ('Worse','Getting worse'), ('Improved','Improved'), ('Resolved','Resolved')] %}
+                <button name="state" value="{{ state }}" class="btn btn--tiny">{{ label }}</button>
+              {% endfor %}
+            </form>
+          {% endif %}
+        </div>
       </div>
 
-      <p class="cluster-card__localities">
-        <svg width="14" height="14"><use href="#icon-pin"/></svg>
-        {{ c.affected_localities | join(' · ') }}
-      </p>
-
-      <div class="cluster-card__stats">
-        <span><svg width="14" height="14"><use href="#icon-people"/></svg> {{ item.unique_contributors }} people</span>
-        <span><svg width="14" height="14"><use href="#icon-chart"/></svg> {{ item.total_reports }} reports</span>
-        {% if c.trend == 'increasing' %}<span class="trend--up">↑ Increasing</span>{% endif %}
-      </div>
-
-      {# Community sentiment — shown alongside official status, never merged #}
-      {% if item.sentiment.total > 0 %}
-        <p class="cluster-card__sentiment">
-          Community says: <strong>{{ item.sentiment.still_affected_pct }}% still affected</strong>
-        </p>
-      {% endif %}
-
-      {# Verification actions — logged-in citizens only #}
-      {% if session.get('role') == 'citizen' %}
-        <form method="POST" action="{{ url_for('citizen.verify_cluster', cluster_id=c.id) }}" class="verif-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <span class="verif-form__label">Still happening?</span>
-          {% for state, label in [('StillHappening','Yes'), ('Worse','Getting worse'), ('Improved','Improved'), ('Resolved','Resolved')] %}
-            <button name="state" value="{{ state }}" class="btn btn--tiny">{{ label }}</button>
-          {% endfor %}
-        </form>
-      {% endif %}
+      <aside class="community-activity">
+        <h3 class="community-activity__title">Community activity</h3>
+        <p class="community-activity__hint">More people joining. A stronger voice.</p>
+        <div class="community-activity__stat">
+          <svg width="16" height="16"><use href="#icon-people"/></svg>
+          <span class="community-activity__value">{{ community_stats.total_participants }}</span>
+          <span class="community-activity__label">Total participants</span>
+        </div>
+        <div class="community-activity__stat">
+          <svg width="16" height="16"><use href="#icon-signal"/></svg>
+          <span class="community-activity__value">{{ community_stats.active_demands }}</span>
+          <span class="community-activity__label">Active demands</span>
+        </div>
+        <div class="community-activity__stat">
+          <svg width="16" height="16"><use href="#icon-pin"/></svg>
+          <span class="community-activity__value">{{ community_stats.areas_covered }}</span>
+          <span class="community-activity__label">Areas covered</span>
+        </div>
+        <div class="community-activity__tip">
+          <svg width="16" height="16"><use href="#icon-signal"/></svg>
+          <strong>Your support matters.</strong> When more people join a demand, it gets higher priority with decision-makers.
+        </div>
+      </aside>
     </div>
-  {% endfor %}
-  </div>
+
+    {% if cluster_data[1:] %}
+      <section>
+        <div class="home-section__head">
+          <h2 class="home-section__title">All community demands</h2>
+        </div>
+        <div class="demand-row-list">
+          {% for item in cluster_data[1:] %}
+            {% set c = item.cluster %}
+            <div class="demand-row">
+              <div class="demand-row__visual">
+                <svg width="20" height="20"><use href="#{{ CAT_ICONS.get(item.category_code, 'icon-cat-default') }}"/></svg>
+              </div>
+              <div class="demand-row__body">
+                <div class="demand-row__chips">
+                  <span class="status status--active">{{ item.category_name }}</span>
+                  <span class="status status--{{ 'review' if c.active_status == 'UnderGovernmentReview' else 'active' }}">
+                    {{ c.active_status | replace('UnderGovernmentReview', 'Under Review') }}
+                  </span>
+                  {% if c.trend == 'increasing' %}<span class="status status--increasing">↑ Increasing</span>{% endif %}
+                </div>
+                <p class="demand-row__title">{{ item.category_name }} — {{ c.affected_localities | join(' · ') }}</p>
+                <p class="demand-row__meta">{{ item.unique_contributors }} people · {{ item.total_reports }} reports</p>
+              </div>
+              <div class="demand-row__actions">
+                {% if item.already_supported %}
+                  <span class="support-demand-btn--done">
+                    <svg width="14" height="14"><use href="#icon-clipboard-check"/></svg> Added
+                  </span>
+                {% else %}
+                  <form method="POST" action="{{ url_for('citizen.support_cluster', cluster_id=c.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn--secondary btn--small">I need this too</button>
+                  </form>
+                {% endif %}
+                {% if session.get('role') == 'citizen' %}
+                  <form method="POST" action="{{ url_for('citizen.verify_cluster', cluster_id=c.id) }}" class="verif-form verif-form--compact">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% for state, label in [('StillHappening','Yes'), ('Worse','Worse'), ('Improved','Improved'), ('Resolved','Resolved')] %}
+                      <button name="state" value="{{ state }}" class="btn btn--tiny">{{ label }}</button>
+                    {% endfor %}
+                  </form>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+  {% endif %}
 
 </div>
 {% endblock %}

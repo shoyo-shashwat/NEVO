@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Report a problem — BRICS People First{% endblock %}
+{% block title %}Report a need — Nevo{% endblock %}
 
 {% block content %}
 <div class="report-flow-page">
@@ -14,7 +14,7 @@
     </div>
   {% else %}
     <div class="report-flow__intro">
-      <span class="home__eyebrow">Step 1 of 4 · You report it</span>
+      <span class="page-eyebrow">Step 1 of 4 · You report it</span>
       <h1 class="report-flow__heading">What's the problem?</h1>
       <p class="report-flow__hint">Describe it in your own words — voice or text, no government-style form to fill in.</p>
     </div>
@@ -85,25 +85,27 @@
       </button>
     </form>
 
-    <aside class="report-flow__sidebar">
-      <h2 class="report-flow__sidebar-title">What happens next</h2>
-      <ol class="report-flow__next-steps">
-        <li>
-          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-people"/></svg></span>
-          We check if others already reported the same problem nearby.
-        </li>
-        <li>
-          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-building"/></svg></span>
-          Once enough voices join, it becomes visible to government reviewers.
-        </li>
-        <li>
-          <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-check"/></svg></span>
-          You can follow the whole journey from your timeline, including the final outcome.
-        </li>
-      </ol>
-      <div class="report-flow__sidebar-illustration" aria-hidden="true">
-        <svg width="100" height="120"><use href="#illus-hero-report"/></svg>
+    <aside class="report-flow__sidebar-col">
+      <div class="report-flow__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-report-hero.png') }}')"></div>
+      <div class="report-flow__sidebar">
+        <h2 class="report-flow__sidebar-title">What happens next</h2>
+        <ol class="report-flow__next-steps">
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-people"/></svg></span>
+            We check if others already reported the same problem nearby.
+          </li>
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-building"/></svg></span>
+            Once enough voices join, it becomes visible to government reviewers.
+          </li>
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-check"/></svg></span>
+            You can follow the whole journey from your timeline, including the final outcome.
+          </li>
+        </ol>
+        <div class="report-flow__sidebar-illustration" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-report-next.png') }}')" aria-hidden="true"></div>
       </div>
+      <p class="report-flow__tagline">Your voice.<br>A stronger community.</p>
     </aside>
   </div>
 

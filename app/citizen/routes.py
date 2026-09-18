@@ -12,7 +12,7 @@ from flask import (
     render_template, request, session, redirect, url_for, flash, jsonify
 )
 from geoalchemy2.functions import ST_AsGeoJSON
-from sqlalchemy import func
+from sqlalchemy import func, case
 from datetime import datetime, timezone
 import json
 import logging
@@ -36,8 +36,71 @@ from app.auth.session import current_actor_id, current_role, current_user, curre
 
 @citizen_bp.route("/")
 def home():
-    """Single primary CTA — tell us what your community needs."""
-    return render_template("citizen/home.html")
+    """
+    Home answers "what is happening in my area, and how can I participate?"
+    (India-only MVP design review) — not just the report CTA. Community
+    snapshot + top demands are real counts scoped to the citizen's country;
+    personal impact summary only for a logged-in citizen with real
+    contributions (never shown empty/fabricated for anonymous visitors).
+    """
+    country_id = _country_id_from_session()
+
+    clusters = (
+        DemandCluster.query
+        .filter(
+            DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+            DemandCluster.country_id == country_id,
+        )
+        .all()
+    )
+
+    snapshot = {
+        "participants": sum(c.unique_contributors for c in clusters),
+        "active_demands": len(clusters),
+        "projects_tracked": Project.query.filter_by(country_id=country_id).count() if country_id else 0,
+        "projects_completed": Project.query.filter_by(country_id=country_id, status="Completion").count() if country_id else 0,
+    }
+
+    top_demands = sorted(clusters, key=lambda c: c.unique_contributors, reverse=True)[:3]
+    top_demand_cards = []
+    for c in top_demands:
+        cat = db.session.get(Category, c.category_id)
+        localities = c.affected_localities or []
+        top_demand_cards.append({
+            "cluster": c,
+            "category_name": cat.name if cat else "",
+            "category_code": cat.code if cat else "",
+            "unique_contributors": c.unique_contributors,
+            "total_reports": c.total_reports,
+            "trend": c.trend,
+            "active_status": c.active_status,
+            "locality": localities[0] if localities else "",
+        })
+
+    personal = None
+    if current_role() == "citizen" and current_actor_id():
+        actor_id = current_actor_id()
+        reports_count = Report.query.filter_by(citizen_account_id=actor_id).count()
+        if reports_count:
+            joined_count = Contribution.query.filter_by(citizen_account_id=actor_id).count()
+            resolved_count = (
+                db.session.query(func.count(func.distinct(Contribution.demand_cluster_id)))
+                .join(Outcome, Outcome.demand_cluster_id == Contribution.demand_cluster_id)
+                .filter(Contribution.citizen_account_id == actor_id, Outcome.status == "Verified")
+                .scalar() or 0
+            )
+            personal = {
+                "reports_submitted": reports_count,
+                "demands_joined": joined_count,
+                "issues_resolved": resolved_count,
+            }
+
+    return render_template(
+        "citizen/home.html",
+        snapshot=snapshot,
+        top_demand_cards=top_demand_cards,
+        personal=personal,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -469,25 +532,47 @@ def community():
 
     clusters = query.order_by(DemandCluster.created_at.desc()).limit(50).all()
 
+    citizen_account_id, anonymous_token = _current_identity()
+
     # Annotate each cluster with derived counts (avoids N+1 in template)
     cluster_data = []
     for c in clusters:
         cat = db.session.get(Category, c.category_id)
+        supported_query = Contribution.query.filter_by(demand_cluster_id=c.id)
+        if citizen_account_id:
+            supported_query = supported_query.filter_by(citizen_account_id=citizen_account_id)
+        else:
+            supported_query = supported_query.filter_by(anonymous_token=anonymous_token)
         cluster_data.append({
             "cluster": c,
             "category_name": cat.name if cat else "",
+            "category_code": cat.code if cat else "",
             "total_reports": c.total_reports,
             "unique_contributors": c.unique_contributors,
             "sentiment": c.community_sentiment,
+            "already_supported": supported_query.first() is not None,
         })
 
     categories = Category.query.all()
+
+    # Community-wide activity snapshot — always unfiltered by category, so the
+    # panel reads as "this community" context rather than shifting with filters.
+    all_active = DemandCluster.query.filter(
+        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"])
+    ).all()
+    areas = {loc for c in all_active for loc in (c.affected_localities or [])}
+    community_stats = {
+        "total_participants": sum(c.unique_contributors for c in all_active),
+        "active_demands": len(all_active),
+        "areas_covered": len(areas),
+    }
 
     return render_template(
         "citizen/community_demand.html",
         cluster_data=cluster_data,
         categories=categories,
         active_category=category_filter,
+        community_stats=community_stats,
     )
 
 
@@ -678,8 +763,191 @@ def my_timeline():
 
 
 # ---------------------------------------------------------------------------
+# Screen 7 — Impact ("Did anything actually change?")
+# ---------------------------------------------------------------------------
+
+@citizen_bp.route("/impact")
+def impact():
+    """
+    Two-part answer to "did anything actually change?":
+
+    1. A country-wide funnel — citizen voices -> collective demands ->
+       government decisions -> projects -> completed -> citizen-verified.
+       Every stage is a real COUNT query, never an invented/rounded figure.
+    2. Community outcomes — every Project with a Verified Outcome in this
+       country, showing the government-reported before/after (Outcome) and
+       the separate citizen-verification signal (DemandCluster.community_
+       sentiment) side by side, same "never merge official vs. community
+       signals" discipline as evidence_detail.html.
+
+    Logged-in citizens additionally see a personal contribution summary
+    (reports submitted / demands joined / resolved) reusing the same
+    identity pattern as my_timeline().
+    """
+    country_id = _country_id_from_session()
+
+    # --- Funnel (country-wide, real counts only) ---
+    citizen_voices = (
+        db.session.query(func.count(func.distinct(
+            case(
+                (Contribution.citizen_account_id.isnot(None), func.concat("acct:", Contribution.citizen_account_id)),
+                else_=func.concat("anon:", Contribution.anonymous_token),
+            )
+        )))
+        .join(DemandCluster, Contribution.demand_cluster_id == DemandCluster.id)
+        .filter(DemandCluster.country_id == country_id)
+        .scalar() or 0
+    )
+    collective_demands = DemandCluster.query.filter_by(country_id=country_id).count()
+
+    # Every stage after this one counts DISTINCT demand clusters that
+    # reached that stage, not raw row counts -- a cluster can accumulate
+    # multiple GovernmentDecision rows over time (e.g. NeedsValidation,
+    # then later Prioritize), which would otherwise make "government
+    # decisions" exceed "collective demands" and break the funnel's basic
+    # visual/logical premise (each stage should be <= the one before it).
+    government_decisions = (
+        db.session.query(func.count(func.distinct(GovernmentDecision.demand_cluster_id)))
+        .filter(GovernmentDecision.country_id == country_id)
+        .scalar() or 0
+    )
+    projects_total = (
+        db.session.query(func.count(func.distinct(Project.linked_demand_cluster_id)))
+        .filter(Project.country_id == country_id, Project.linked_demand_cluster_id.isnot(None))
+        .scalar() or 0
+    )
+    projects_completed = (
+        db.session.query(func.count(func.distinct(Project.linked_demand_cluster_id)))
+        .filter(Project.country_id == country_id, Project.status == "Completion",
+                Project.linked_demand_cluster_id.isnot(None))
+        .scalar() or 0
+    )
+    citizen_verified_count = (
+        db.session.query(func.count(func.distinct(Outcome.demand_cluster_id)))
+        .join(Project, Outcome.project_id == Project.id)
+        .filter(Project.country_id == country_id, Outcome.status == "Verified")
+        .scalar() or 0
+    )
+
+    funnel = [
+        {"label": "Citizen voices", "count": citizen_voices},
+        {"label": "Collective demands", "count": collective_demands},
+        {"label": "Government decisions", "count": government_decisions},
+        {"label": "Projects", "count": projects_total},
+        {"label": "Completed", "count": projects_completed},
+        {"label": "Citizen-verified", "count": citizen_verified_count},
+    ]
+
+    # --- Community outcomes: every Verified Outcome in this country ---
+    verified_outcomes = (
+        Outcome.query
+        .join(Project, Outcome.project_id == Project.id)
+        .filter(Project.country_id == country_id, Outcome.status == "Verified")
+        .order_by(Outcome.timestamp.desc())
+        .limit(20)
+        .all()
+    )
+    outcome_cards = []
+    for outcome in verified_outcomes:
+        project = db.session.get(Project, outcome.project_id)
+        cluster = db.session.get(DemandCluster, outcome.demand_cluster_id)
+        cat = db.session.get(Category, cluster.category_id) if cluster else None
+        outcome_cards.append({
+            "project": project,
+            "cluster": cluster,
+            "category_name": cat.name if cat else "",
+            "category_code": cat.code if cat else "",
+            "outcome": outcome,
+            "sentiment": cluster.community_sentiment if cluster else None,
+        })
+
+    # --- Personal contribution summary (logged-in citizens only) ---
+    personal = None
+    if current_role() == "citizen" and current_actor_id():
+        actor_id = current_actor_id()
+        reports_count = Report.query.filter_by(citizen_account_id=actor_id).count()
+        joined_count = Contribution.query.filter_by(citizen_account_id=actor_id).count()
+        resolved_count = (
+            db.session.query(func.count(func.distinct(Contribution.demand_cluster_id)))
+            .join(Outcome, Outcome.demand_cluster_id == Contribution.demand_cluster_id)
+            .filter(Contribution.citizen_account_id == actor_id, Outcome.status == "Verified")
+            .scalar() or 0
+        )
+        personal = {
+            "reports_submitted": reports_count,
+            "demands_joined": joined_count,
+            "issues_resolved": resolved_count,
+        }
+
+    return render_template(
+        "citizen/impact.html",
+        funnel=funnel,
+        outcome_cards=outcome_cards,
+        personal=personal,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Community Verification (inline action from /community)
 # ---------------------------------------------------------------------------
+
+@citizen_bp.route("/cluster/<cluster_id>/support", methods=["POST"])
+def support_cluster(cluster_id):
+    """
+    "I need this too" — the Community page's one-click affordance for
+    joining an EXISTING collective demand without going through the full
+    AI report-extraction pipeline. A citizen who recognises their own
+    problem in an already-identified cluster shouldn't have to describe it
+    again from scratch; they're confirming, not reporting something new.
+
+    Still creates a minimal Report row (Contribution.report_id is NOT NULL,
+    and "every contribution traces to a report" is a hard invariant
+    elsewhere in this file/README) directly in Clustered status — this is
+    the one place a Report is created without ever calling the AI
+    extraction pipeline, which is fine because there is no free-text input
+    to extract from.
+
+    Idempotent per identity+cluster: a second click from the same citizen
+    (or anonymous browser) is a no-op, not a second Contribution — matches
+    DemandCluster.unique_contributors already deduping by identity_key, but
+    without this guard total_reports would still inflate on repeat clicks.
+    """
+    cluster = DemandCluster.query.get_or_404(cluster_id)
+    citizen_account_id, anonymous_token = _current_identity()
+
+    existing_query = Contribution.query.filter_by(demand_cluster_id=cluster_id)
+    if citizen_account_id:
+        existing_query = existing_query.filter_by(citizen_account_id=citizen_account_id)
+    else:
+        existing_query = existing_query.filter_by(anonymous_token=anonymous_token)
+    if existing_query.first() is not None:
+        flash("You've already added your voice to this.", "info")
+        return redirect(url_for("citizen.community"))
+
+    report = Report(
+        citizen_account_id=citizen_account_id,
+        anonymous_token=anonymous_token,
+        country_id=cluster.country_id,
+        region_id=(cluster.region_ids[0] if cluster.region_ids else None),
+        category_id=cluster.category_id,
+        original_raw_input="Supported an existing community demand (\"I need this too\").",
+        channel="text",
+        status="Clustered",
+    )
+    db.session.add(report)
+    db.session.flush()
+
+    db.session.add(Contribution(
+        report_id=report.id,
+        citizen_account_id=citizen_account_id,
+        anonymous_token=anonymous_token,
+        demand_cluster_id=cluster_id,
+        type="joined",
+    ))
+    db.session.commit()
+    flash("Added — thanks for confirming this affects you too.", "success")
+    return redirect(url_for("citizen.community"))
+
 
 @citizen_bp.route("/cluster/<cluster_id>/verify", methods=["POST"])
 def verify_cluster(cluster_id):
