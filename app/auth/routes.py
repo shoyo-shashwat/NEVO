@@ -3,14 +3,15 @@
 # Real account routes: citizen self-signup, password sign-in, logout,
 # account/profile, and password reset — across the two real account tables
 # (CitizenAccount, GovernmentAccount) described in app/models/auth_models.py.
+# This is the ONLY way into the app — the old passwordless "/login" demo
+# picker (set_demo_session/get_all_demo_actors) has been removed; seeded
+# is_demo=True accounts now sign in the same way as everyone else, with
+# their real (seeded) password — see seed/seed_data.py::DEMO_ACTOR_PASSWORD.
 #
 # Government accounts are never self-registered here — they're created
 # directly by an admin from /gov/admin (see government/routes.py::
 # provision_government_user), matching the existing schema's
 # provisioned_by column and the absence of any invite-token table.
-#
-# Deliberately separate from the existing "/login" route in app/__init__.py,
-# which remains the one-click seeded-demo-account picker (unchanged UI).
 
 from datetime import datetime, timezone, timedelta
 
@@ -23,7 +24,7 @@ from app.extensions import db, limiter
 from app.models.auth_models import (
     CitizenAccount, GovernmentAccount, PasswordResetToken, log_action,
 )
-from app.models.shared import Country
+from app.models.shared import Country, AdministrativeRegion
 from app.auth.security import (
     hash_password, verify_password, validate_password_strength,
     is_valid_email, generate_raw_token, hash_token,
@@ -51,17 +52,64 @@ def _email_in_use(email: str) -> bool:
     )
 
 
+def _redirect_to_own_home():
+    """
+    Where an ALREADY-logged-in visitor to /signup or /signin belongs —
+    never unconditionally citizen.home. A government account hitting either
+    page (e.g. a stale bookmark, or clicking "Sign up" while still signed in
+    as an MP) used to be redirected into the citizen app entirely, which
+    left the government nav bar (driven by session['role']) showing on top
+    of citizen page content — a real mixed-role bug caught during
+    multi-state browser verification, not cosmetic.
+    """
+    if current_account_type() == "government":
+        return redirect(url_for("government.dashboard"))
+    return redirect(url_for("citizen.home"))
+
+
 # ---------------------------------------------------------------------------
 # Signup (citizen self-registration)
 # ---------------------------------------------------------------------------
+
+def _regions_payload(countries) -> dict:
+    """
+    {country_id: {"states": [{id,name}], "districts": {state_id: [{id,name}]}}}
+    — everything the signup form's state/district cascading selects need,
+    shaped so the client can filter without a round trip. Only state_province
+    and district_municipality levels are surfaced here; constituency-level
+    regions are government-scope-only (see app/auth/actors.py) and never a
+    citizen signup choice.
+    """
+    country_ids = [c.id for c in countries]
+    regions = (
+        AdministrativeRegion.query
+        .filter(
+            AdministrativeRegion.country_id.in_(country_ids),
+            AdministrativeRegion.level.in_(["state_province", "district_municipality"]),
+        )
+        .order_by(AdministrativeRegion.name)
+        .all()
+    )
+    payload = {cid: {"states": [], "districts": {}} for cid in country_ids}
+    for r in regions:
+        bucket = payload.get(r.country_id)
+        if bucket is None:
+            continue
+        if r.level == "state_province":
+            bucket["states"].append({"id": r.id, "name": r.name})
+        else:
+            bucket["districts"].setdefault(r.parent_region_id, []).append({"id": r.id, "name": r.name})
+    return payload
+
 
 @auth_bp.route("/signup", methods=["GET", "POST"])
 @limiter.limit("10 per hour")
 def signup():
     if current_user():
-        return redirect(url_for("citizen.home"))
+        return _redirect_to_own_home()
 
     countries = Country.query.filter_by(status="active").order_by(Country.name).all()
+    regions_payload = _regions_payload(countries)
 
     if request.method == "POST":
         name = (request.form.get("name") or "").strip()
@@ -69,6 +117,9 @@ def signup():
         password = request.form.get("password") or ""
         confirm = request.form.get("confirm_password") or ""
         country_id = request.form.get("country_id") or ""
+        state_region_id = request.form.get("state_region_id") or ""
+        district_region_id = request.form.get("district_region_id") or ""
+        locality = (request.form.get("locality") or "").strip() or None
         preferred_language = (request.form.get("preferred_language") or "en").strip()
         phone = (request.form.get("phone") or "").strip() or None
         consent = request.form.get("consent") == "on"
@@ -80,6 +131,8 @@ def signup():
             errors.append("Please enter a valid email address.")
         if not any(c.id == country_id for c in countries):
             errors.append("Please select your country.")
+        if not state_region_id:
+            errors.append("Please select your state.")
         if password != confirm:
             errors.append("Passwords do not match.")
         if not consent:
@@ -89,12 +142,27 @@ def signup():
         if not errors and _email_in_use(email):
             errors.append("An account with this email already exists.")
 
+        # region_id stores the most specific administrative scope the
+        # citizen gave us — the district if they picked one, else the state.
+        # Validated against the actual seeded hierarchy so a tampered/stale
+        # form value can never assign a region from a different country.
+        region_id = None
+        if not errors:
+            candidate_id = district_region_id or state_region_id
+            candidate = db.session.get(AdministrativeRegion, candidate_id) if candidate_id else None
+            if candidate is None or candidate.country_id != country_id:
+                errors.append("Please select a valid state/district.")
+            else:
+                region_id = candidate.id
+
         if errors:
             for e in errors:
                 flash(e, "error")
             return render_template(
-                "auth/signup.html", countries=countries,
+                "auth/signup.html", countries=countries, regions_payload=regions_payload,
                 form_name=name, form_email=email, form_country_id=country_id,
+                form_state_region_id=state_region_id, form_district_region_id=district_region_id,
+                form_locality=locality or "",
             )
 
         now = datetime.now(timezone.utc)
@@ -104,6 +172,8 @@ def signup():
             full_name=name,
             phone=phone,
             country_id=country_id,
+            region_id=region_id,
+            locality=locality,
             preferred_language=preferred_language or "en",
             consent_given_at=now,
             consent_version=CONSENT_VERSION,
@@ -120,7 +190,7 @@ def signup():
         flash(f"Welcome, {account.full_name} — your account has been created.", "success")
         return redirect(url_for("citizen.home"))
 
-    return render_template("auth/signup.html", countries=countries)
+    return render_template("auth/signup.html", countries=countries, regions_payload=regions_payload)
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +201,7 @@ def signup():
 @limiter.limit("10 per minute")
 def signin():
     if current_user():
-        return redirect(url_for("citizen.home"))
+        return _redirect_to_own_home()
 
     next_url = request.values.get("next") or ""
 
@@ -150,9 +220,7 @@ def signin():
             flash(message, "error")
             return render_template("auth/signin.html", next=next_url, form_email=email)
 
-        if account is None or account.is_demo:
-            # is_demo accounts never authenticate with a password — treat
-            # as "no such account" rather than leaking which emails exist.
+        if account is None:
             log_action("anonymous", None, "login_failed", account_type, None, ip_address=_client_ip())
             db.session.commit()
             return _fail("Incorrect email or password.")

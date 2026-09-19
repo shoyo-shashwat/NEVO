@@ -36,10 +36,34 @@
       </div>
 
       <div class="auth-field">
+        <label for="state_region_id">State</label>
+        <select id="state_region_id" name="state_region_id" required>
+          <option value="">Select your state</option>
+        </select>
+      </div>
+
+      <div class="auth-field">
+        <label for="district_region_id">District <span class="report-flow__optional">(optional)</span></label>
+        <select id="district_region_id" name="district_region_id">
+          <option value="">Select your district</option>
+        </select>
+      </div>
+
+      <div class="auth-field">
+        <label for="locality">Local area / neighbourhood <span class="report-flow__optional">(optional)</span></label>
+        <input type="text" id="locality" name="locality" value="{{ form_locality or '' }}" placeholder="e.g. Sinnar Rural, Ward 12">
+      </div>
+
+      <div class="auth-field">
         <label for="preferred_language">Preferred language</label>
         <select id="preferred_language" name="preferred_language">
           <option value="en">English</option>
           <option value="hi">हिन्दी (Hindi)</option>
+          <option value="mr">मराठी (Marathi)</option>
+          <option value="kn">ಕನ್ನಡ (Kannada)</option>
+          <option value="gu">ગુજરાતી (Gujarati)</option>
+          <option value="ta">தமிழ் (Tamil)</option>
+          <option value="bn">বাংলা (Bengali)</option>
           <option value="pt">Português</option>
           <option value="ru">Русский</option>
         </select>
@@ -76,4 +100,53 @@
     Already have an account? <a href="{{ url_for('auth.signin') }}">Sign in</a>
   </p>
 </div>
+
+<script>
+  // Cascading state/district selects — data-driven from the seeded
+  // AdministrativeRegion hierarchy (see auth/routes.py::_regions_payload),
+  // no server round trip needed to switch states/districts.
+  (function () {
+    var REGIONS = {{ regions_payload | tojson }};
+    var countrySel = document.getElementById('country_id');
+    var stateSel = document.getElementById('state_region_id');
+    var districtSel = document.getElementById('district_region_id');
+    var selectedState = {{ (form_state_region_id or '') | tojson }};
+    var selectedDistrict = {{ (form_district_region_id or '') | tojson }};
+
+    function fillStates() {
+      var data = REGIONS[countrySel.value] || {states: [], districts: {}};
+      stateSel.innerHTML = '<option value="">Select your state</option>';
+      data.states.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        if (s.id === selectedState) opt.selected = true;
+        stateSel.appendChild(opt);
+      });
+      fillDistricts(data);
+    }
+
+    function fillDistricts(data) {
+      data = data || REGIONS[countrySel.value] || {states: [], districts: {}};
+      districtSel.innerHTML = '<option value="">Select your district</option>';
+      var districts = data.districts[stateSel.value] || [];
+      districts.forEach(function (d) {
+        var opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        if (d.id === selectedDistrict) opt.selected = true;
+        districtSel.appendChild(opt);
+      });
+    }
+
+    countrySel.addEventListener('change', function () {
+      selectedState = '';
+      selectedDistrict = '';
+      fillStates();
+    });
+    stateSel.addEventListener('change', function () { fillDistricts(); });
+
+    if (countrySel.value) fillStates();
+  })();
+</script>
 {% endblock %}

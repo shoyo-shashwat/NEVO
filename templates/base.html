@@ -176,8 +176,11 @@
       <select id="lang-switch" class="lang-switch" aria-label="Language" data-no-i18n>
         <option value="en">English</option>
         <option value="hi">हिन्दी</option>
-        <option value="pt">Português</option>
-        <option value="ru">Русский</option>
+        <option value="mr">मराठी</option>
+        <option value="kn">ಕನ್ನಡ</option>
+        <option value="gu">ગુજરાતી</option>
+        <option value="ta">தமிழ்</option>
+        <option value="bn">বাংলা</option>
       </select>
     </div>
 
@@ -192,11 +195,9 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="nav-link-switch" style="background:none;border:none;cursor:pointer;font:inherit;">Log out</button>
         </form>
-        <a href="{{ url_for('login_page') }}" class="nav-link-switch">Switch</a>
       {% else %}
         <a href="{{ url_for('auth.signin') }}" class="nav-link-switch">Sign in</a>
         <a href="{{ url_for('auth.signup') }}" class="nav-link-switch">Sign up</a>
-        <a href="{{ url_for('login_page') }}" class="nav-link-switch">Demo login</a>
       {% endif %}
     </div>
   </div>

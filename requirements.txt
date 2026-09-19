@@ -21,6 +21,9 @@ groq==0.29.0                   # Groq Python SDK
 cohere==5.15.0                 # Cohere Embed v4
 elevenlabs==2.3.0              # ElevenLabs Scribe v2
 
+# Messaging channels
+twilio==9.11.1                 # WhatsApp citizen intake webhook
+
 # Utilities
 python-dotenv==1.1.0           # loads .env in development
 

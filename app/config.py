@@ -33,8 +33,17 @@ class Config:
 
     # AI providers
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-    GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen/qwen3.6-27b")
+    GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
 
     COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
 
     ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+
+    # Twilio WhatsApp citizen intake (app/whatsapp/routes.py). Optional —
+    # without these the webhook still runs but cannot verify a request
+    # actually came from Twilio (see _validate_twilio_signature()); use the
+    # /whatsapp/test-send adapter (WHATSAPP_TEST_ADAPTER=1) to exercise the
+    # real intake pipeline locally without any Twilio credentials.
+    TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER", "")

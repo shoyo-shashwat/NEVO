@@ -64,17 +64,25 @@ def dashboard():
     country = Country.query.filter_by(code=country_code).first()
     country_id = country.id if country else None
 
-    # Active clusters for this country, ordered by trend then recency
-    clusters = (
-        DemandCluster.query
-        .filter(
-            DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
-            DemandCluster.country_id == country_id,
-        )
-        .order_by(DemandCluster.updated_at.desc())
-        .limit(20)
-        .all()
+    # MP scope resolved once, up front — every pool below (cards, the four
+    # lenses, and the stat strip) must be built from the SAME scoped set, not
+    # just the Investment Alignment card. Missing this here meant an MP's
+    # "Active signals"/"Critical priority"/Top Priorities list were silently
+    # country-wide while only the alignment breakdown was constituency-scoped
+    # — a real cross-state data leak caught during multi-state browser
+    # verification, not a cosmetic gap.
+    mp_region_id, mp_region_ids, _ = _government_scope(country_id)
+
+    # Active clusters for this country (and, for an MP, their own
+    # constituency), ordered by trend then recency.
+    cluster_query = DemandCluster.query.filter(
+        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+        DemandCluster.country_id == country_id,
     )
+    clusters = cluster_query.order_by(DemandCluster.updated_at.desc()).limit(200).all()
+    if mp_region_ids:
+        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+    clusters = clusters[:20]
 
     cards = [_build_cluster_card(c) for c in clusters]
 
@@ -126,16 +134,33 @@ def dashboard():
             .all()
         )
 
+    # decisions_recorded: all-time count, but scoped to the MP's own
+    # constituency clusters when applicable — GovernmentDecision has no
+    # region of its own, so scoping means counting decisions whose cluster's
+    # region_ids overlap the same mp_region_ids used everywhere else on this
+    # page (a plain-JSON column, so the overlap check happens in Python,
+    # same pattern demand_intelligence()/citizen_voice() already use).
+    if mp_region_ids and country_id:
+        decision_cluster_ids = (
+            db.session.query(DemandCluster.id, DemandCluster.region_ids)
+            .join(GovernmentDecision, GovernmentDecision.demand_cluster_id == DemandCluster.id)
+            .filter(GovernmentDecision.country_id == country_id)
+            .all()
+        )
+        decisions_recorded = len([
+            row for row in decision_cluster_ids if mp_region_ids & set(row.region_ids or [])
+        ])
+    else:
+        decisions_recorded = GovernmentDecision.query.filter_by(country_id=country_id).count() if country_id else 0
+
     # Quick-glance stat strip — same `cards` pool, just tallied. Purely
     # presentational (Round 4 "dashboard is very empty" feedback); no new
-    # scoring, no new query beyond the one count of all-time decisions.
+    # scoring beyond the scoped decision count above.
     stats = {
         "active_signals": len(cards),
         "critical_count": len([c for c in cards if c["priority"] == "CRITICAL"]),
         "awaiting_decision": len(pending),
-        "decisions_recorded": GovernmentDecision.query
-            .filter_by(country_id=country_id)
-            .count() if country_id else 0,
+        "decisions_recorded": decisions_recorded,
     }
 
     # Population-based investment-alignment breakdown (India-only MVP design
@@ -146,7 +171,6 @@ def dashboard():
     # that scopes the four lenses above.
     breakdown = None
     if country_id:
-        mp_region_id, _, _ = _government_scope(country_id)
         breakdown = alignment_analytics.calculate(country_id, region_id=mp_region_id)
 
     return render_template(
@@ -217,6 +241,7 @@ def demand_map_projects_data():
             Project.name,
             Project.status,
             DemandCluster.category_id,
+            DemandCluster.region_ids,
             ST_AsGeoJSON(DemandCluster.centroid).label("geojson"),
         )
         .join(DemandCluster, Project.linked_demand_cluster_id == DemandCluster.id)
@@ -226,6 +251,14 @@ def demand_map_projects_data():
         )
         .all()
     )
+
+    # MP-scoped to their own constituency (same rule every other government
+    # list view applies via _government_scope()) — this endpoint was the one
+    # place that scoping had been missed, so an MP's map used to silently
+    # show every state's project markers instead of just their own.
+    _, mp_region_ids, _ = _government_scope(country_id)
+    if mp_region_ids:
+        rows = [r for r in rows if mp_region_ids & set(r.region_ids or [])]
 
     features = []
     for row in rows:
@@ -555,6 +588,11 @@ def gap_analysis():
 def policy_insights():
     country_id = _country_id_from_session()
 
+    # MP-scoped to their own constituency's clusters, same rule as every
+    # other government list view (this route allows "mp" too, and had no
+    # scoping at all).
+    _, mp_region_ids, _ = _government_scope(country_id)
+
     clusters = (
         DemandCluster.query
         .filter(
@@ -562,9 +600,12 @@ def policy_insights():
             DemandCluster.country_id == country_id,
         )
         .order_by(DemandCluster.updated_at.desc())
-        .limit(30)
+        .limit(200)
         .all()
     )
+    if mp_region_ids:
+        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+    clusters = clusters[:30]
 
     cards = [_build_cluster_card(c) for c in clusters]
     top_cards = sorted(cards, key=lambda card: _PRIORITY_RANK.get(card["priority"], 0), reverse=True)[:8]
@@ -697,15 +738,23 @@ def reports():
 
     breakdown = alignment_analytics.calculate(country_id, region_id=mp_region_id) if country_id else None
 
+    # Project.region_id is a single value (unlike DemandCluster.region_ids),
+    # so an MP's scope check is a plain IN filter — same mp_region_ids used
+    # to scope clusters above, so a state's Development Brief only ever
+    # counts that state's own projects/outcomes, not every project in India.
     project_query = Project.query.filter_by(country_id=country_id)
+    if mp_region_ids:
+        project_query = project_query.filter(Project.region_id.in_(mp_region_ids))
     projects_completed = project_query.filter_by(status="Completion").count()
     projects_total = project_query.count()
 
-    outcomes_verified = (
+    outcomes_query = (
         Outcome.query.join(Project, Outcome.project_id == Project.id)
         .filter(Project.country_id == country_id, Outcome.status == "Verified")
-        .count()
     )
+    if mp_region_ids:
+        outcomes_query = outcomes_query.filter(Project.region_id.in_(mp_region_ids))
+    outcomes_verified = outcomes_query.count()
 
     return render_template(
         "government/reports.html",
@@ -1131,12 +1180,15 @@ def projects_outcomes():
     country = Country.query.filter_by(code=country_code).first()
     country_id = country.id if country else None
 
-    projects = (
-        Project.query
-        .filter_by(country_id=country_id)
-        .order_by(Project.updated_at.desc())
-        .all()
-    )
+    # MP-scoped to their own constituency's projects, same rule as every
+    # other government list view — this page previously showed every
+    # project in the country to every MP regardless of region_id.
+    _, mp_region_ids, _ = _government_scope(country_id)
+
+    project_query = Project.query.filter_by(country_id=country_id)
+    if mp_region_ids:
+        project_query = project_query.filter(Project.region_id.in_(mp_region_ids))
+    projects = project_query.order_by(Project.updated_at.desc()).all()
 
     project_data = []
     for p in projects:

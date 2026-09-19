@@ -44,6 +44,7 @@ def home():
     contributions (never shown empty/fabricated for anonymous visitors).
     """
     country_id = _country_id_from_session()
+    region_scope, region_name = _citizen_region_scope(country_id)
 
     clusters = (
         DemandCluster.query
@@ -53,6 +54,8 @@ def home():
         )
         .all()
     )
+    if region_scope:
+        clusters = [c for c in clusters if set(c.region_ids or []) & region_scope]
 
     # Single round trip for both project counts — was two sequential
     # .count() queries. Each DB round trip against the serverless (Neon)
@@ -120,6 +123,7 @@ def home():
         snapshot=snapshot,
         top_demand_cards=top_demand_cards,
         personal=personal,
+        region_name=region_name,
     )
 
 
@@ -247,10 +251,14 @@ def report_flow():
     # Resolve region_id from location string (best-effort fuzzy match on name).
     # Finding 3 (Citizen Report Flow Audit): matches against district/city-level
     # rows seeded in seed/seed_data.py::seed_district_regions(), not just the
-    # two state-level rows per country. If nothing matches at all, degrade
-    # gracefully to the country's broadest (state-level) region rather than
-    # silently leaving region_id null with no location scoping whatsoever —
-    # Option B fallback from the audit, layered on top of the Option A seed fix.
+    # two state-level rows per country. If nothing matches at all, degrade to
+    # the CITIZEN'S OWN registered region (their real signup state/district)
+    # rather than an arbitrary alphabetically-first state for the whole
+    # country — the earlier fallback silently mis-assigned every unmatched
+    # citizen nationwide to whichever state's name happened to sort first,
+    # which is exactly the kind of single-state-bias bug the multi-state
+    # rework targets. Anonymous citizens (no account) keep the old
+    # broadest-region fallback since there's no personal scope to use.
     region_id = None
     country_id = _country_id_from_session()
     if extracted.get("location") and country_id:
@@ -263,20 +271,27 @@ def report_flow():
         if region:
             region_id = region.id
         else:
-            # No specific match — fall back to the broadest seeded region for
-            # this country so the report still carries some location scoping.
-            fallback_region = (
-                AdministrativeRegion.query
-                .filter_by(country_id=country_id, level="state_province")
-                .order_by(AdministrativeRegion.name.asc())
-                .first()
-            )
-            if fallback_region:
-                region_id = fallback_region.id
+            account = current_user()
+            account_region_id = getattr(account, "region_id", None) if account is not None else None
+            if account_region_id:
+                region_id = account_region_id
                 logger.info(
-                    "No region match for location hint %r — falling back to %s",
-                    extracted.get("location"), fallback_region.name,
+                    "No region match for location hint %r — falling back to citizen's own region",
+                    extracted.get("location"),
                 )
+            else:
+                fallback_region = (
+                    AdministrativeRegion.query
+                    .filter_by(country_id=country_id, level="state_province")
+                    .order_by(AdministrativeRegion.name.asc())
+                    .first()
+                )
+                if fallback_region:
+                    region_id = fallback_region.id
+                    logger.info(
+                        "No region match for location hint %r — falling back to %s",
+                        extracted.get("location"), fallback_region.name,
+                    )
 
     # --- Draft/Report gate (Progress Log §13.1) ---
     status = "Unclustered" if meta.get("complete") else "Draft"
@@ -544,13 +559,21 @@ def community():
     category_filter = request.args.get("category")
     region_filter = request.args.get("region")
 
+    country_id = _country_id_from_session()
+    region_scope, region_name = _citizen_region_scope(country_id)
+
     query = DemandCluster.query.filter(
-        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"])
+        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+        DemandCluster.country_id == country_id,
     )
     if category_filter:
         query = query.filter_by(category_id=category_filter)
 
-    clusters = query.order_by(DemandCluster.created_at.desc()).limit(50).all()
+    clusters = query.order_by(DemandCluster.created_at.desc()).limit(200).all()
+    if region_scope:
+        clusters = [c for c in clusters if set(c.region_ids or []) & region_scope][:50]
+    else:
+        clusters = clusters[:50]
 
     citizen_account_id, anonymous_token = _current_identity()
 
@@ -575,11 +598,16 @@ def community():
 
     categories = Category.query.all()
 
-    # Community-wide activity snapshot — always unfiltered by category, so the
-    # panel reads as "this community" context rather than shifting with filters.
+    # Community-wide activity snapshot — always unfiltered by category (but
+    # still scoped to this citizen's own country/state, same as the list
+    # above), so the panel reads as "this community" context rather than
+    # shifting with category filters.
     all_active = DemandCluster.query.filter(
-        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"])
+        DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
+        DemandCluster.country_id == country_id,
     ).all()
+    if region_scope:
+        all_active = [c for c in all_active if set(c.region_ids or []) & region_scope]
     areas = {loc for c in all_active for loc in (c.affected_localities or [])}
     community_stats = {
         "total_participants": sum(c.unique_contributors for c in all_active),
@@ -593,6 +621,7 @@ def community():
         categories=categories,
         active_category=category_filter,
         community_stats=community_stats,
+        region_name=region_name,
     )
 
 
@@ -626,9 +655,26 @@ def demand_map_data():
     scoped to the current session's country (Round 4 fix — this used to
     return every country's clusters on one whole-world view; a citizen or
     government user should only ever see their own country's map).
+
+    This endpoint is shared: the citizen map AND the government map's
+    "Demand" layer (government/templates/government/demand_map.html) both
+    fetch it directly. _citizen_region_scope() only applies to a citizen
+    session, so an MP hitting this endpoint used to fall through to
+    country-wide with no constituency scoping at all (caught during
+    multi-state browser verification) — resolved here without importing
+    from government/ (still against the hard "never import from
+    government/" rule for this module) by reading the MP's own
+    GovernmentAccount.region_id directly, the same way
+    government/routes.py::_government_scope() does.
     """
     category_filter = request.args.get("category")
     country_id = _country_id_from_session()
+    region_scope, _ = _citizen_region_scope(country_id)
+    if region_scope is None and current_role() == "mp":
+        mp_region_id = getattr(current_user(), "region_id", None)
+        if mp_region_id:
+            from app.services.alignment_analytics import _descendant_region_ids
+            region_scope = _descendant_region_ids(country_id, mp_region_id)
 
     query = db.session.query(
         DemandCluster.id,
@@ -636,6 +682,7 @@ def demand_map_data():
         DemandCluster.active_status,
         DemandCluster.affected_localities,
         DemandCluster.trend,
+        DemandCluster.region_ids,
         ST_AsGeoJSON(DemandCluster.centroid).label("geojson"),
     ).filter(
         DemandCluster.centroid.isnot(None),
@@ -647,6 +694,8 @@ def demand_map_data():
         query = query.filter(DemandCluster.category_id == category_filter)
 
     rows = query.all()
+    if region_scope:
+        rows = [r for r in rows if set(r.region_ids or []) & region_scope]
 
     features = []
     for row in rows:
@@ -680,8 +729,8 @@ def my_timeline():
     Requires a citizen session.
     """
     if current_role() != "citizen" or not current_actor_id():
-        flash("Select a citizen account to view your timeline.", "info")
-        return redirect(url_for("login_page"))
+        flash("Sign in to view your timeline.", "info")
+        return redirect(url_for("auth.signin", next=request.path))
 
     actor_id = current_actor_id()
 
@@ -1005,11 +1054,36 @@ def _country_id_from_session() -> str:
     return country.id if country else "country-in"
 
 
+def _citizen_region_scope(country_id: str):
+    """
+    (region_ids_or_None, region_name_or_None) for the logged-in citizen's own
+    registered state/district (CitizenAccount.region_id, set at signup — see
+    auth/routes.py::signup()). None/None for anonymous citizens or accounts
+    seeded before this field existed — home/community/map then stay
+    country-wide, same as before this multi-state scoping was added.
+
+    Mirrors government/routes.py::_government_scope()'s descendant-inclusive
+    expansion so "my state" also covers every district/constituency beneath
+    it, not just an exact region_id match.
+    """
+    account = current_user()
+    if account is None or current_account_type() != "citizen":
+        return None, None
+    region_id = getattr(account, "region_id", None)
+    if not region_id:
+        return None, None
+    from app.services.alignment_analytics import _descendant_region_ids
+    from app.models.shared import AdministrativeRegion
+    expanded = _descendant_region_ids(country_id, region_id)
+    region = db.session.get(AdministrativeRegion, region_id)
+    return expanded, (region.name if region else None)
+
+
 def _groq_model_name() -> str:
     """Mirrors groq_client._model() — kept in sync so audit logs record the
     model actually used, not a hardcoded guess."""
     import os
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3-27b")
+    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 
 def _current_identity():

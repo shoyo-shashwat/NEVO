@@ -51,10 +51,12 @@ def create_app(config_class=Config):
     from app.citizen import citizen_bp
     from app.government import government_bp
     from app.auth import auth_bp
+    from app.whatsapp import whatsapp_bp
 
     app.register_blueprint(citizen_bp)    # url_prefix="/citizen" set in blueprint
     app.register_blueprint(government_bp)  # url_prefix="/gov" set in blueprint
     app.register_blueprint(auth_bp)
+    app.register_blueprint(whatsapp_bp)   # url_prefix="/whatsapp" set in blueprint
 
     # ------------------------------------------------------------------
     # 3b. Load the current user (if any) on every request from the
@@ -75,16 +77,17 @@ def create_app(config_class=Config):
         return load_logged_in_user()
 
     # ------------------------------------------------------------------
-    # 4. Landing page ("/") + dedicated login page ("/login").
+    # 4. Landing page ("/") + login redirect ("/login").
     #
-    #    Round 4 UI directive: the marketing/explainer landing page and the
-    #    demo-account picker used to live on the same template, which made
-    #    the front door feel like "a demo" rather than a real product and
-    #    buried the actual CTAs under an account switcher. They are now two
-    #    separate routes/templates:
-    #      "/"       role_select()  — pure landing page, no accounts shown.
-    #      "/login"  login_page()   — the demo-account picker (grouped by
-    #                                 country), POSTs back to itself.
+    #    "/"       role_select()  — pure landing page, no accounts shown.
+    #    "/login"  login_page()   — no longer a passwordless demo-account
+    #              picker (that entire flow — set_demo_session/
+    #              get_all_demo_actors-as-login — has been removed; every
+    #              account, seeded or real, now authenticates with a real
+    #              password at /signin). This endpoint is kept only so old
+    #              bookmarks/links to /login and every existing
+    #              url_for("login_page") reference across the codebase keep
+    #              working, by forwarding straight to the real sign-in page.
     #    Both live here rather than in a blueprint because they sit above
     #    citizen/government and are shared infrastructure, not domain logic.
     #    The endpoint name "role_select" is kept (rather than renamed) so
@@ -97,26 +100,17 @@ def create_app(config_class=Config):
 
     @app.route("/login", methods=["GET", "POST"])
     def login_page():
-        # One-click login for seeded is_demo=True accounts only — see
-        # app/auth/session.py::set_demo_session(). Real citizen/government
-        # accounts sign in at /signin or via an accepted invite; this path
-        # can never authenticate them (set_demo_session rejects is_demo=False
-        # rows even if someone guesses/forges an id).
-        from app.auth.session import get_all_demo_actors, set_demo_session
-
-        if request.method == "POST":
-            actor_id = request.form.get("actor_id", "").strip()
-            if not set_demo_session(actor_id):
-                flash("Unknown actor — please select one from the list.", "error")
-                return redirect(url_for("login_page"))
-
-            role = session.get("role")
-            if role in ("mp", "planning_officer", "admin"):
-                return redirect(url_for("government.dashboard"))
-            return redirect(url_for("citizen.home"))
-
-        actors = get_all_demo_actors()
-        return render_template("login.html", actors=actors)
+        # role_select.html's three "Continue as ..." cards all link here.
+        # If a DIFFERENT role's session is still active in this browser
+        # (e.g. a government session left over from earlier), forward
+        # straight to sign-in without logging out first used to leave the
+        # old role's nav bar showing on top of the new role's page — log
+        # out unconditionally first so every "Continue as ..." click always
+        # starts a clean sign-in, never a mixed-role page.
+        from app.auth.session import logout_user
+        if session.get("role"):
+            logout_user()
+        return redirect(url_for("auth.signin", **request.args))
 
     # ------------------------------------------------------------------
     # 4b. Every dynamic (non-static) response is session-dependent — the

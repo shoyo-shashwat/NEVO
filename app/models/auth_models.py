@@ -19,11 +19,12 @@
 # (account_type, account_id) pattern PasswordResetToken already established
 # — one sessions table for both citizen and government accounts, not two.
 #
-# is_demo is the other addition: a plain boolean on both account tables so
-# the existing one-click /login country-card picker (which must not be
-# redesigned — see app/auth/session.py) can keep working against real
-# accounts without a bespoke actor registry. The 13 pre-existing accounts
-# are marked is_demo=True by the reconciliation migration/seed.
+# is_demo is the other addition: a plain boolean marking seeded/reference
+# accounts (see seed/seed_data.py). It used to also gate a passwordless
+# one-click /login picker — that entire bypass has been removed (multi-state
+# rework); every account, seeded or real, now authenticates the same way,
+# with its real password at /signin. is_demo today is purely informational
+# (the /gov/admin "Demo actors" reference table).
 
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -56,6 +57,17 @@ class CitizenAccount(db.Model):
     phone = db.Column(db.String(20), nullable=True)
     country_id = db.Column(db.String(36), db.ForeignKey("countries.id"), nullable=False)
 
+    # Administrative scope — state/district (AdministrativeRegion, any level)
+    # a citizen selects at signup, plus a free-text local area/neighbourhood
+    # that's too granular to model as its own AdministrativeRegion row.
+    # Nullable so pre-existing rows (seeded before this column existed) don't
+    # break, but every new /signup submission requires region_id — see
+    # app/auth/routes.py::signup(). Used to scope Home/Community/Map to the
+    # citizen's own state instead of only their country (see
+    # citizen/routes.py::_citizen_scope()).
+    region_id = db.Column(db.String(36), db.ForeignKey("administrative_regions.id"), nullable=True)
+    locality = db.Column(db.String(200), nullable=True)
+
     preferred_language = db.Column(db.String(10), nullable=False, default="en")
 
     # Consent is mandatory at signup — never nullable. consent_version lets
@@ -74,6 +86,7 @@ class CitizenAccount(db.Model):
     last_login_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     country = db.relationship("Country", foreign_keys=[country_id])
+    region = db.relationship("AdministrativeRegion", foreign_keys=[region_id])
 
     def __repr__(self):
         return f"<CitizenAccount {self.email}>"

@@ -43,7 +43,7 @@ def _get_client() -> Groq:
 
 
 def _model() -> str:
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3-27b")
+    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 
 # ---------------------------------------------------------------------------

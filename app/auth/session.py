@@ -208,14 +208,14 @@ def current_country_code() -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 def require_role(*roles: str):
-    """Decorator that redirects to the account picker if the current session's
+    """Decorator that redirects to sign-in if the current session's
     permission group is not in the allowed list."""
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
             if session.get("role") not in roles:
                 flash("Please sign in to continue.", "info")
-                return redirect(url_for("login_page"))
+                return redirect(url_for("auth.signin", next=request.path))
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -233,22 +233,20 @@ def require_login(f):
 
 
 # ---------------------------------------------------------------------------
-# Demo-actor picker (backs the existing /login country-card UI)
+# Seeded-account reference listing (read-only — /gov/admin's "Demo actors"
+# table). This NEVER logs anyone in — the passwordless one-click picker
+# (set_demo_session) that used to back /login has been removed entirely.
+# Every is_demo=True account authenticates the same way as a real account,
+# through /signin with its real (seeded) password — see
+# seed/seed_data.py::DEMO_ACTOR_PASSWORD.
 # ---------------------------------------------------------------------------
-# Only is_demo=True accounts are reachable here. This is a one-click
-# convenience login for seeded reviewer accounts, not a general auth
-# bypass — a real citizen/government account (is_demo=False) can never be
-# logged into through this path, only through /signin (password) or a
-# provisioned government account's password.
 
 def get_all_demo_actors() -> list[dict]:
     """
-    All is_demo=True accounts across both tables, shaped as the plain dicts
-    the /login and /gov/admin templates already expect
-    (id, role, name, country_code) — role here is the COARSE permission
-    group (citizen/mp/planning_officer/reviewer/admin) since that's what
-    role_select.html's three demo cards (citizen/mp/planning_officer) key
-    off of, unchanged from before this schema migration.
+    All is_demo=True accounts across both tables, shaped as plain dicts
+    (id, role, name, country_code) for the /gov/admin reference table —
+    role here is the COARSE permission group (citizen/mp/planning_officer/
+    reviewer/admin).
     """
     from app.models.auth_models import CitizenAccount, GovernmentAccount
 
@@ -270,24 +268,3 @@ def get_all_demo_actors() -> list[dict]:
         })
 
     return sorted(actors, key=lambda a: (a["country_code"], order.get(a["role"], 99)))
-
-
-def set_demo_session(actor_id: str) -> bool:
-    """
-    Log in as a seeded demo account by id (searched across both account
-    tables). Returns True on success, False if actor_id doesn't match an
-    active is_demo=True account.
-    """
-    from app.models.auth_models import CitizenAccount, GovernmentAccount
-
-    account = db.session.get(CitizenAccount, actor_id)
-    if account is not None and account.is_demo and account.is_active:
-        login_user(account, "citizen")
-        return True
-
-    account = db.session.get(GovernmentAccount, actor_id)
-    if account is not None and account.is_demo and account.is_active:
-        login_user(account, "government")
-        return True
-
-    return False

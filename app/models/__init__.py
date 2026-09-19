@@ -22,3 +22,4 @@ from app.models.auth_models import (  # noqa: F401
     AuditLog,
 )
 from app.models.ai_models import AIProcessingLog, BackgroundJob  # noqa: F401
+from app.models.whatsapp_models import WhatsAppMessageLog  # noqa: F401
