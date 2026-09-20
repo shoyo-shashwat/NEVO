@@ -332,3 +332,34 @@ def test_send():
         log_row.error_message = str(e)[:500]
         db.session.commit()
         return jsonify({"error": str(e)}), 500
+
+
+@whatsapp_bp.route("/status-callback", methods=["POST"])
+@csrf.exempt
+def status_callback():
+    """
+    Twilio delivery-status callback — a separate webhook from /webhook,
+    with a different payload (MessageStatus: queued/sent/delivered/read/
+    failed/undelivered, no Body/NumMedia). Twilio only requires a 200
+    response here; this just logs the status against the matching
+    WhatsAppMessageLog row (by MessageSid) for observability. Never treats
+    a status ping as an inbound citizen message — pointing Twilio's "When a
+    message comes in" webhook at this route (or vice versa) would be wrong.
+    """
+    if not _validate_twilio_signature():
+        logger.warning("Rejected WhatsApp status callback — invalid Twilio signature.")
+        return Response(status=403)
+
+    message_sid = request.form.get("MessageSid", "")
+    message_status = request.form.get("MessageStatus", "")
+    error_code = request.form.get("ErrorCode") or None
+
+    logger.info("WhatsApp delivery status: sid=%s status=%s error_code=%s",
+                message_sid, message_status, error_code)
+
+    log_row = WhatsAppMessageLog.query.filter_by(message_sid=message_sid).first()
+    if log_row is not None and message_status in ("failed", "undelivered") and error_code:
+        log_row.error_message = f"Delivery {message_status}: Twilio error {error_code}"
+        db.session.commit()
+
+    return Response(status=200)

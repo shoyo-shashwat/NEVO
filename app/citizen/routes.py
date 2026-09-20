@@ -54,8 +54,7 @@ def home():
         )
         .all()
     )
-    if region_scope:
-        clusters = [c for c in clusters if set(c.region_ids or []) & region_scope]
+    clusters = [c for c in clusters if _in_region_scope(c.region_ids, region_scope)]
 
     # Single round trip for both project counts — was two sequential
     # .count() queries. Each DB round trip against the serverless (Neon)
@@ -570,10 +569,7 @@ def community():
         query = query.filter_by(category_id=category_filter)
 
     clusters = query.order_by(DemandCluster.created_at.desc()).limit(200).all()
-    if region_scope:
-        clusters = [c for c in clusters if set(c.region_ids or []) & region_scope][:50]
-    else:
-        clusters = clusters[:50]
+    clusters = [c for c in clusters if _in_region_scope(c.region_ids, region_scope)][:50]
 
     citizen_account_id, anonymous_token = _current_identity()
 
@@ -606,8 +602,7 @@ def community():
         DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
         DemandCluster.country_id == country_id,
     ).all()
-    if region_scope:
-        all_active = [c for c in all_active if set(c.region_ids or []) & region_scope]
+    all_active = [c for c in all_active if _in_region_scope(c.region_ids, region_scope)]
     areas = {loc for c in all_active for loc in (c.affected_localities or [])}
     community_stats = {
         "total_participants": sum(c.unique_contributors for c in all_active),
@@ -694,8 +689,7 @@ def demand_map_data():
         query = query.filter(DemandCluster.category_id == category_filter)
 
     rows = query.all()
-    if region_scope:
-        rows = [r for r in rows if set(r.region_ids or []) & region_scope]
+    rows = [r for r in rows if _in_region_scope(r.region_ids, region_scope)]
 
     features = []
     for row in rows:
@@ -1077,6 +1071,28 @@ def _citizen_region_scope(country_id: str):
     expanded = _descendant_region_ids(country_id, region_id)
     region = db.session.get(AdministrativeRegion, region_id)
     return expanded, (region.name if region else None)
+
+
+def _in_region_scope(cluster_region_ids, region_scope) -> bool:
+    """
+    True if a cluster belongs in a citizen's scoped view.
+
+    A cluster with NO region_ids at all is a data gap (location text didn't
+    resolve to a known region — e.g. an anonymous report with no GPS/hint,
+    or free text that didn't match anything), not "this cluster is in a
+    different state." Excluding it would hide a citizen's OWN just-created
+    report from their own Home/Community/Map — a real regression caught
+    live (a citizen saw "your community issue has been started" immediately
+    followed by "no active community issues yet"). Same fallback rule
+    government/routes.py::_cluster_in_mp_scope() already uses for exactly
+    this reason.
+    """
+    if not region_scope:
+        return True
+    ids = set(cluster_region_ids or [])
+    if not ids:
+        return True
+    return bool(ids & region_scope)
 
 
 def _groq_model_name() -> str:

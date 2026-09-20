@@ -14,7 +14,7 @@ import json
 from datetime import datetime, timezone
 
 from flask import render_template, request, session, redirect, url_for, flash
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.government import government_bp
 from app.extensions import db
@@ -80,8 +80,7 @@ def dashboard():
         DemandCluster.country_id == country_id,
     )
     clusters = cluster_query.order_by(DemandCluster.updated_at.desc()).limit(200).all()
-    if mp_region_ids:
-        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+    clusters = [c for c in clusters if _in_mp_scope(c.region_ids, mp_region_ids)]
     clusters = clusters[:20]
 
     cards = [_build_cluster_card(c) for c in clusters]
@@ -148,7 +147,7 @@ def dashboard():
             .all()
         )
         decisions_recorded = len([
-            row for row in decision_cluster_ids if mp_region_ids & set(row.region_ids or [])
+            row for row in decision_cluster_ids if _in_mp_scope(row.region_ids, mp_region_ids)
         ])
     else:
         decisions_recorded = GovernmentDecision.query.filter_by(country_id=country_id).count() if country_id else 0
@@ -257,8 +256,7 @@ def demand_map_projects_data():
     # place that scoping had been missed, so an MP's map used to silently
     # show every state's project markers instead of just their own.
     _, mp_region_ids, _ = _government_scope(country_id)
-    if mp_region_ids:
-        rows = [r for r in rows if mp_region_ids & set(r.region_ids or [])]
+    rows = [r for r in rows if _in_mp_scope(r.region_ids, mp_region_ids)]
 
     features = []
     for row in rows:
@@ -347,6 +345,24 @@ def _cluster_in_mp_scope(cluster: DemandCluster) -> bool:
     return bool(mp_region_ids & cluster_regions)
 
 
+def _in_mp_scope(region_ids, mp_region_ids) -> bool:
+    """
+    Same "no region_ids = in scope, not filtered out" rule as
+    _cluster_in_mp_scope(), factored out for the many list-building call
+    sites below (dashboard/reports/policy_insights/map/etc.) that used to
+    each do a raw `mp_region_ids & set(c.region_ids or [])` check — which
+    silently hid any not-yet-geo-tagged cluster from its own MP, the same
+    class of bug fixed on the citizen side (see
+    citizen/routes.py::_in_region_scope()).
+    """
+    if not mp_region_ids:
+        return True
+    ids = set(region_ids or [])
+    if not ids:
+        return True
+    return bool(ids & mp_region_ids)
+
+
 # ---------------------------------------------------------------------------
 # Demand Intelligence — shared list view (MP: constituency-scoped via
 # GovernmentAccount.region_id; Planning Officer: country-wide). Same
@@ -379,10 +395,7 @@ def demand_intelligence():
     _, mp_region_ids, region_note = _government_scope(country_id)
 
     clusters = query.order_by(DemandCluster.updated_at.desc()).limit(200).all()
-    if mp_region_ids:
-        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])][:100]
-    else:
-        clusters = clusters[:100]
+    clusters = [c for c in clusters if _in_mp_scope(c.region_ids, mp_region_ids)][:100]
     cards = [_build_cluster_card(c) for c in clusters]
 
     # Alignment filter applied after card-building since alignment_state is
@@ -603,8 +616,7 @@ def policy_insights():
         .limit(200)
         .all()
     )
-    if mp_region_ids:
-        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+    clusters = [c for c in clusters if _in_mp_scope(c.region_ids, mp_region_ids)]
     clusters = clusters[:30]
 
     cards = [_build_cluster_card(c) for c in clusters]
@@ -654,7 +666,10 @@ def citizen_voice():
 
     _, mp_region_ids, region_note = _government_scope(country_id)
     if mp_region_ids:
-        query = query.filter(Report.region_id.in_(mp_region_ids))
+        # region_id IS NULL (location text never resolved to a region) counts
+        # as in-scope too — same "don't hide a citizen's own report from
+        # their own MP over a data gap" rule as _in_mp_scope() below.
+        query = query.filter(or_(Report.region_id.in_(mp_region_ids), Report.region_id.is_(None)))
 
     recent_reports = query.order_by(Report.created_at.desc()).limit(30).all()
 
@@ -680,7 +695,7 @@ def citizen_voice():
             .filter(Report.country_id == country_id, Report.created_at >= start, Report.created_at < end)
         )
         if mp_region_ids:
-            q = q.filter(Report.region_id.in_(mp_region_ids))
+            q = q.filter(or_(Report.region_id.in_(mp_region_ids), Report.region_id.is_(None)))
         return dict(q.group_by(Report.category_id).all())
 
     recent_counts = _category_counts(window_start, now)
@@ -729,8 +744,7 @@ def reports():
         DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
         DemandCluster.country_id == country_id,
     ).all()
-    if mp_region_ids:
-        clusters = [c for c in clusters if mp_region_ids & set(c.region_ids or [])]
+    clusters = [c for c in clusters if _in_mp_scope(c.region_ids, mp_region_ids)]
 
     cards = [_build_cluster_card(c) for c in clusters]
     top_cards = sorted(cards, key=lambda card: _PRIORITY_RANK.get(card["priority"], 0), reverse=True)[:10]
@@ -742,9 +756,11 @@ def reports():
     # so an MP's scope check is a plain IN filter — same mp_region_ids used
     # to scope clusters above, so a state's Development Brief only ever
     # counts that state's own projects/outcomes, not every project in India.
+    # region_id IS NULL (no region assigned yet) still counts as in-scope —
+    # same data-gap rule as everywhere else, not excluded.
     project_query = Project.query.filter_by(country_id=country_id)
     if mp_region_ids:
-        project_query = project_query.filter(Project.region_id.in_(mp_region_ids))
+        project_query = project_query.filter(or_(Project.region_id.in_(mp_region_ids), Project.region_id.is_(None)))
     projects_completed = project_query.filter_by(status="Completion").count()
     projects_total = project_query.count()
 
@@ -753,7 +769,7 @@ def reports():
         .filter(Project.country_id == country_id, Outcome.status == "Verified")
     )
     if mp_region_ids:
-        outcomes_query = outcomes_query.filter(Project.region_id.in_(mp_region_ids))
+        outcomes_query = outcomes_query.filter(or_(Project.region_id.in_(mp_region_ids), Project.region_id.is_(None)))
     outcomes_verified = outcomes_query.count()
 
     return render_template(
@@ -1187,7 +1203,7 @@ def projects_outcomes():
 
     project_query = Project.query.filter_by(country_id=country_id)
     if mp_region_ids:
-        project_query = project_query.filter(Project.region_id.in_(mp_region_ids))
+        project_query = project_query.filter(or_(Project.region_id.in_(mp_region_ids), Project.region_id.is_(None)))
     projects = project_query.order_by(Project.updated_at.desc()).all()
 
     project_data = []
