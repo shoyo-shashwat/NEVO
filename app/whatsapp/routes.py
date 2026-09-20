@@ -27,7 +27,7 @@
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import request, Response, jsonify
 from twilio.request_validator import RequestValidator
@@ -36,7 +36,7 @@ from twilio.twiml.messaging_response import MessagingResponse
 from app.whatsapp import whatsapp_bp
 from app.extensions import db, csrf
 from app.models.shared import Country, AdministrativeRegion, Category, EventLog
-from app.models.citizen_models import Report, Contribution
+from app.models.citizen_models import Report, Contribution, Evidence
 from app.models.demand_cluster import DemandCluster
 from app.models.whatsapp_models import WhatsAppMessageLog
 from app.models.ai_models import log_ai_call
@@ -44,6 +44,17 @@ from app.services import groq_client
 from app.services.demand_matching import find_similar_clusters, store_cluster_embedding
 
 logger = logging.getLogger(__name__)
+
+# How long an unfinished (Draft) conversation stays open for a follow-up
+# reply to continue, instead of starting a brand-new, unrelated report.
+CONVERSATION_WINDOW_MINUTES = 45
+
+# After this many total messages in one conversation without resolving both
+# category and location, stop asking and save what we have for a human
+# reviewer — never loop forever re-asking the same question (see the live
+# repro: "what type of problem" / "where is it" alternating indefinitely
+# because each reply used to be extracted in total isolation from the last).
+MAX_CLARIFICATION_TURNS = 2
 
 
 # ---------------------------------------------------------------------------
@@ -78,18 +89,72 @@ def _validate_twilio_signature() -> bool:
     return validator.validate(request.url, request.form.to_dict(), signature)
 
 
-def _transcribe_voice_media(media_url: str) -> str:
-    """Downloads a WhatsApp voice-note media file (Twilio-authenticated) and
-    transcribes it with the same ElevenLabs pipeline the web report flow uses."""
+def _download_media(media_url: str) -> tuple[bytes, str]:
+    """Downloads any WhatsApp media file (Twilio-authenticated). Returns (bytes, content_type)."""
     import httpx
-    from app.services.elevenlabs_client import transcribe_audio
 
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     resp = httpx.get(media_url, auth=(account_sid, auth_token), timeout=30.0)
     resp.raise_for_status()
-    result = transcribe_audio(resp.content, mime_type=resp.headers.get("content-type") or "audio/ogg")
+    return resp.content, (resp.headers.get("content-type") or "")
+
+
+def _transcribe_voice_media(media_url: str) -> str:
+    """Downloads a WhatsApp voice-note media file and transcribes it with the
+    same ElevenLabs pipeline the web report flow uses."""
+    from app.services.elevenlabs_client import transcribe_audio
+
+    data, content_type = _download_media(media_url)
+    result = transcribe_audio(data, mime_type=content_type or "audio/ogg")
     return result["text"]
+
+
+class _InMemoryFile:
+    """Minimal werkzeug-FileStorage-alike so a downloaded WhatsApp image can
+    be handed to evidence_storage.save_evidence_photo() unchanged — that
+    module deliberately only depends on `.mimetype`/`.read()`, never on
+    Flask's request object, so this is the correct adapter rather than
+    reshaping evidence_storage.py around a non-request caller."""
+
+    def __init__(self, data: bytes, mimetype: str):
+        self._data = data
+        self.mimetype = mimetype
+
+    def read(self) -> bytes:
+        return self._data
+
+
+def _attach_photo_evidence(report_id: str, uploaded_by: str, image_bytes: bytes, content_type: str) -> None:
+    from app.services.evidence_storage import save_evidence_photo, EvidenceUploadError
+
+    try:
+        photo_url = save_evidence_photo(_InMemoryFile(image_bytes, content_type))
+        db.session.add(Evidence(
+            type="photo", url=photo_url, uploaded_by=uploaded_by,
+            attached_to="Report", attached_to_id=report_id, report_id=report_id,
+        ))
+    except EvidenceUploadError as e:
+        logger.warning("WhatsApp evidence photo rejected: %s", e)
+    except Exception as e:
+        logger.warning("WhatsApp evidence photo upload failed, continuing without it: %s", e)
+
+
+def _find_open_draft(anonymous_token: str):
+    """The most recent still-open (Draft) report from this WhatsApp number,
+    if any, within CONVERSATION_WINDOW_MINUTES — the conversation this new
+    message is most likely continuing, not starting fresh."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=CONVERSATION_WINDOW_MINUTES)
+    return (
+        Report.query
+        .filter(
+            Report.anonymous_token == anonymous_token,
+            Report.status == "Draft",
+            Report.created_at >= cutoff,
+        )
+        .order_by(Report.created_at.desc())
+        .first()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -97,13 +162,32 @@ def _transcribe_voice_media(media_url: str) -> str:
 # test adapter, so both exercise the exact same extraction/matching logic.
 # ---------------------------------------------------------------------------
 
-def _process_intake_message(raw_text: str, from_number: str, log_row: WhatsAppMessageLog) -> str:
+def _process_intake_message(
+    raw_text: str, from_number: str, log_row: WhatsAppMessageLog,
+    image_bytes: bytes | None = None, image_content_type: str | None = None,
+) -> str:
     country = Country.query.filter_by(code="IN").first()
     country_id = country.id if country else None
     anonymous_token = f"whatsapp:{log_row.from_number_hash}"
 
+    # Continue an open conversation instead of starting a new, amnesiac one
+    # each reply — this is the fix for a real bug caught live: a citizen
+    # answering "where is it" then "what type of problem" got asked the
+    # SAME two questions on an endless loop, because every message used to
+    # be extracted alone, with zero memory of what they'd already said.
+    existing_draft = _find_open_draft(anonymous_token)
+    if existing_draft:
+        conversation_text = (existing_draft.original_raw_input or "") + "\n" + raw_text
+        prior_turns = WhatsAppMessageLog.query.filter(
+            WhatsAppMessageLog.report_id == existing_draft.id
+        ).count()
+    else:
+        conversation_text = raw_text
+        prior_turns = 0
+    turn_number = prior_turns + 1
+
     try:
-        extracted = groq_client.extract_report_fields(raw_text)
+        extracted = groq_client.extract_report_fields(conversation_text)
     except Exception as e:
         logger.warning("WhatsApp Groq extraction failed, falling back to Draft: %s", e)
         extracted = {
@@ -127,31 +211,55 @@ def _process_intake_message(raw_text: str, from_number: str, log_row: WhatsAppMe
         )
         region_id = region.id if region else None
 
-    status = "Unclustered" if meta.get("complete") else "Draft"
+    complete = bool(meta.get("complete"))
+    give_up = (not complete) and turn_number >= MAX_CLARIFICATION_TURNS
+    status = "Unclustered" if (complete or give_up) else "Draft"
 
-    report = Report(
-        anonymous_token=anonymous_token,
-        consent_given_at=datetime.now(timezone.utc),
-        country_id=country_id or "country-in",
-        region_id=region_id,
-        category_id=category_id,
-        original_raw_input=raw_text,              # write-once, same invariant as the web route
-        original_language=extracted.get("language_detected"),
-        problem_summary_en=extracted.get("problem_summary_en"),
-        channel="messaging",
-        severity=extracted.get("severity"),
-        duration=extracted.get("duration"),
-        affected_group=extracted.get("affected_group"),
-        status=status,
-    )
-    db.session.add(report)
+    if existing_draft:
+        report = existing_draft
+        # original_raw_input stays exactly as first written — write-once,
+        # same invariant as the web route — only the structured fields
+        # accumulate as more of the conversation arrives.
+        report.category_id = category_id or report.category_id
+        report.region_id = region_id or report.region_id
+        report.severity = extracted.get("severity") or report.severity
+        report.duration = extracted.get("duration") or report.duration
+        report.affected_group = extracted.get("affected_group") or report.affected_group
+        report.problem_summary_en = extracted.get("problem_summary_en") or report.problem_summary_en
+        report.original_language = report.original_language or extracted.get("language_detected")
+        report.status = status
+        category_id = report.category_id     # carry forward whatever earlier turns already resolved
+        region_id = report.region_id
+        problem_summary = extracted.get("problem_summary") or report.problem_summary_en or conversation_text
+    else:
+        report = Report(
+            anonymous_token=anonymous_token,
+            consent_given_at=datetime.now(timezone.utc),
+            country_id=country_id or "country-in",
+            region_id=region_id,
+            category_id=category_id,
+            original_raw_input=raw_text,              # write-once, same invariant as the web route
+            original_language=extracted.get("language_detected"),
+            problem_summary_en=extracted.get("problem_summary_en"),
+            channel="messaging",
+            severity=extracted.get("severity"),
+            duration=extracted.get("duration"),
+            affected_group=extracted.get("affected_group"),
+            status=status,
+        )
+        db.session.add(report)
+        problem_summary = extracted.get("problem_summary") or raw_text
     db.session.flush()
     log_row.report_id = report.id
+
+    if image_bytes:
+        _attach_photo_evidence(report.id, anonymous_token, image_bytes, image_content_type or "")
 
     log_ai_call(report_id=report.id, stage="extraction", provider="groq", model=_groq_model_name(),
                 success=bool(extracted.get("category") or extracted.get("problem_summary")),
                 structured_output={k: v for k, v in extracted.items() if k != "meta"})
-    db.session.add(EventLog(report_id=report.id, stage="Submitted"))
+    if not existing_draft:
+        db.session.add(EventLog(report_id=report.id, stage="Submitted"))
     db.session.add(EventLog(report_id=report.id, stage="AIUnderstood",
                              metadata_={"summary": extracted.get("problem_summary", "")}))
 
@@ -163,11 +271,22 @@ def _process_intake_message(raw_text: str, from_number: str, log_row: WhatsAppMe
         db.session.commit()
         return clarification
 
+    if not category_id:
+        # Gave up after MAX_CLARIFICATION_TURNS with no category resolved —
+        # a DemandCluster requires one, so there is nothing to cluster into.
+        # Save what we have for a human reviewer rather than keep looping
+        # or silently dropping the citizen's report.
+        db.session.commit()
+        return (
+            "Thank you — we've recorded what you've shared so far. "
+            "A reviewer will follow up if we need anything else."
+        )
+
     match_result = None
     if category_id and country_id:
         try:
             match_result = find_similar_clusters(
-                report_text=extracted.get("problem_summary") or raw_text,
+                report_text=problem_summary,
                 category_id=category_id, country_id=country_id,
             )
         except Exception as e:
@@ -198,7 +317,7 @@ def _process_intake_message(raw_text: str, from_number: str, log_row: WhatsAppMe
     db.session.add(cluster)
     db.session.flush()
     try:
-        store_cluster_embedding(cluster.id, report.original_raw_input)
+        store_cluster_embedding(cluster.id, problem_summary)
     except Exception as e:
         logger.warning("store_cluster_embedding failed for WhatsApp cluster (still created): %s", e)
     db.session.add(Contribution(
@@ -254,27 +373,46 @@ def webhook():
 
     try:
         raw_text = body
-        if num_media > 0 and not raw_text:
+        image_bytes, image_content_type = None, None
+
+        if num_media > 0:
             media_type = request.form.get("MediaContentType0") or ""
             media_url = request.form.get("MediaUrl0") or ""
-            if media_type.startswith("audio") and media_url:
+            if media_type.startswith("audio") and media_url and not raw_text:
                 raw_text = _transcribe_voice_media(media_url)
-            else:
+            elif media_type.startswith("image") and media_url:
+                try:
+                    image_bytes, image_content_type = _download_media(media_url)
+                except Exception as e:
+                    logger.warning("WhatsApp image download failed: %s", e)
+            elif not raw_text:
                 log_row.status = "failed"
                 log_row.error_message = f"Unsupported media type: {media_type or 'unknown'}"
                 db.session.commit()
                 return _twiml(
-                    "We can read text or voice notes right now. "
-                    "Please send your community need as a text or voice message."
+                    "We can read text, photos, or voice notes right now. "
+                    "Please send your community need as a text, photo, or voice message."
                 )
+
+        anonymous_token = f"whatsapp:{log_row.from_number_hash}"
+        if not raw_text and image_bytes and _find_open_draft(anonymous_token):
+            # A caption-less photo sent mid-conversation ("here's a photo of
+            # it") — attach it to whatever's already open rather than
+            # demanding new text just because this particular message had none.
+            raw_text = "(photo attached)"
 
         if not raw_text:
             log_row.status = "failed"
             log_row.error_message = "Empty message"
             db.session.commit()
-            return _twiml("Please describe the community need you'd like to report.")
+            return _twiml(
+                "Please describe the community need you'd like to report — "
+                "in text, a voice note, or a photo with a short caption."
+            )
 
-        reply_text = _process_intake_message(raw_text, from_number, log_row)
+        reply_text = _process_intake_message(
+            raw_text, from_number, log_row, image_bytes=image_bytes, image_content_type=image_content_type,
+        )
         log_row.status = "processed"
         db.session.commit()
         return _twiml(reply_text)
