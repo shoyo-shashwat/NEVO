@@ -25,6 +25,7 @@ from app.models.demand_cluster import DemandCluster
 from app.models.citizen_models import Contribution, Verification  # read-only counts
 from app.models.government_models import GovernmentDecision, Project, Outcome
 from app.models.reference_data import InfrastructureDataPoint, GovernmentInvestment
+from app.models.mplads_models import MpladsStateSummary
 from app.models.shared import Category, Country, AdministrativeRegion, EventLog
 from app.models.auth_models import GovernmentAccount, Department, log_action
 
@@ -172,6 +173,23 @@ def dashboard():
     if country_id:
         breakdown = alignment_analytics.calculate(country_id, region_id=mp_region_id)
 
+    # MPLADS reference context — real, sourced state-level fund-utilization
+    # figures for this MP's own state (GovernmentAccount.region_id IS the
+    # state-level region for every state_admin account — see
+    # seed_multi_state_government()/actors.py — so a direct region_id
+    # lookup is correct here, no constituency->state resolution needed).
+    # Informational context only: NOT wired into the alignment breakdown
+    # above, and never framed as NEVO allocating or tracking spend itself —
+    # see app/models/mplads_models.py for the full rationale.
+    mplads = None
+    if mp_region_id:
+        mplads = (
+            MpladsStateSummary.query
+            .filter_by(region_id=mp_region_id)
+            .order_by(MpladsStateSummary.source_last_updated.desc())
+            .first()
+        )
+
     return render_template(
         "government/dashboard.html",
         role=role,
@@ -183,6 +201,7 @@ def dashboard():
         stats=stats,
         country_code=country_code,
         breakdown=breakdown,
+        mplads=mplads,
     )
 
 
@@ -473,6 +492,20 @@ def national_overview():
         reverse=True,
     )[:5]
 
+    # MPLADS reference context — country-wide comparison across every
+    # seeded state, real sourced figures (see dashboard()/
+    # app/models/mplads_models.py). A Planning Officer's lens is
+    # nation-wide by design, so this is the full table rather than one
+    # state's row.
+    mplads_rows = []
+    if country_id:
+        region_names = {r.id: r.name for r in AdministrativeRegion.query.filter_by(country_id=country_id).all()}
+        summaries = MpladsStateSummary.query.filter_by(country_id=country_id).all()
+        mplads_rows = sorted(
+            [{"state_name": region_names.get(m.region_id, "—"), "summary": m} for m in summaries],
+            key=lambda row: row["state_name"],
+        )
+
     return render_template(
         "government/national_overview.html",
         stats=stats,
@@ -480,6 +513,7 @@ def national_overview():
         breakdown=breakdown,
         needs_attention=needs_attention,
         country_code=session.get("country_code", "IN"),
+        mplads_rows=mplads_rows,
     )
 
 

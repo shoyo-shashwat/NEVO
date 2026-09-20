@@ -117,6 +117,25 @@
     </div>
   {% endif %}
 
+  {# --- MPLADS reference context — real, sourced state-level fund-utilization figures. Informational only: NEVO does not allocate or track MPLADS spend itself. --- #}
+  {% if mplads %}
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-building"/></svg> MPLADS fund utilization — your state</h2>
+      <p class="dashboard-section__hint">Real public MPLADS figures for {{ mplads.lok_sabha_term }} — context to weigh alongside the evidence above when deciding what's worth recommending for MPLADS funding. NEVO does not allocate or disburse MPLADS funds.</p>
+      <div class="alignment-breakdown__chips">
+        <span class="alignment-chip"><svg width="13" height="13"><use href="#icon-people"/></svg>{{ mplads.mp_count }} MPs in state</span>
+        <span class="alignment-chip"><svg width="13" height="13"><use href="#icon-chart"/></svg>₹{{ "%.1f"|format(mplads.total_allocated / 10000000) }} Cr allocated</span>
+        <span class="alignment-chip"><svg width="13" height="13"><use href="#icon-chart"/></svg>₹{{ "%.1f"|format(mplads.total_expenditure / 10000000) }} Cr spent ({{ mplads.fund_utilization_pct }}% utilized)</span>
+        <span class="alignment-chip"><svg width="13" height="13"><use href="#icon-clipboard-check"/></svg>{{ mplads.works_completed }} of {{ mplads.works_recommended }} recommended works completed</span>
+      </div>
+      <p class="alignment-breakdown__note">
+        Source:
+        <a href="{{ mplads.source_url }}" target="_blank" rel="noopener">{{ mplads.source }}</a>
+        · as of {{ mplads.source_last_updated.strftime('%d %b %Y') if mplads.source_last_updated else 'unknown' }}
+      </p>
+    </section>
+  {% endif %}
+
   {% if role == 'mp' %}
     {# ---------------- MP view: strategic / prioritisation lens ---------------- #}
 

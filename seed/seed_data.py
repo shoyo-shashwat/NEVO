@@ -49,6 +49,7 @@ from app.models.reference_data import (
     GovernmentInvestment,
 )
 from app.models.auth_models import CitizenAccount, GovernmentAccount, Department
+from app.models.mplads_models import MpladsStateSummary
 from app.auth.security import hash_password
 
 app = create_app()
@@ -1113,6 +1114,57 @@ def seed_multi_state_projects(state_flagship_cluster: dict):
 
 
 # ---------------------------------------------------------------------------
+# MPLADS reference context — real, sourced, state-level MPLADS fund
+# utilization figures for the 7 seeded states, fetched live from
+# Empowered Indian's public MPLADS Dashboard (https://empoweredindian.in
+# /mplads/states, "Both Houses", 18th Lok Sabha term) on 2026-09-20. Every
+# figure below is real government-derived data as aggregated by that
+# platform — not invented, not a NEVO-computed estimate. See
+# app/models/mplads_models.py for why this is deliberately kept separate
+# from the category-scoped GovernmentInvestment evidence pipeline.
+# ---------------------------------------------------------------------------
+
+MPLADS_TERM = "18th Lok Sabha (2024-29)"
+MPLADS_SOURCE = "Empowered Indian — MPLADS Dashboard (public data aggregated from official MPLADS records)"
+MPLADS_SOURCE_URL = "https://empoweredindian.in/mplads/states"
+MPLADS_AS_OF = date(2026, 9, 20)
+
+# code -> (mp_count, total_allocated_cr, total_expenditure_cr, utilization_pct, works_completed, works_recommended)
+MPLADS_STATE_DATA = {
+    "MH": (67, 952.3, 194.7, 20.4, 1178, 5712),
+    "UP": (111, 1778.3, 912.4, 51.3, 10262, 25980),
+    "KA": (42, 623.9, 180.5, 28.9, 1318, 6006),
+    "RJ": (35, 514.0, 140.0, 27.2, 1313, 4401),
+    "GJ": (35, 504.7, 137.0, 27.1, 3119, 9775),
+    "TN": (58, 845.2, 367.8, 43.5, 3629, 6941),
+    "WB": (53, 783.7, 231.8, 29.6, 2426, 5922),
+}
+
+
+def seed_mplads_reference():
+    """Idempotent upsert-by-(region, term) of real MPLADS state summaries."""
+    region_by_code = {cfg["code"]: cfg["state_id"] for cfg in STATE_EXPANSION}
+
+    for code, (mp_count, allocated_cr, expenditure_cr, util_pct, completed, recommended) in MPLADS_STATE_DATA.items():
+        region_id = region_by_code[code]
+        existing = MpladsStateSummary.query.filter_by(region_id=region_id, lok_sabha_term=MPLADS_TERM).first()
+        if existing:
+            continue
+        db.session.add(MpladsStateSummary(
+            country_id=ID_COUNTRY_IN, region_id=region_id, lok_sabha_term=MPLADS_TERM,
+            mp_count=mp_count,
+            total_allocated=allocated_cr * 10_000_000,      # crore -> rupees
+            total_expenditure=expenditure_cr * 10_000_000,
+            fund_utilization_pct=util_pct,
+            works_completed=completed, works_recommended=recommended,
+            source=MPLADS_SOURCE, source_url=MPLADS_SOURCE_URL,
+            source_last_updated=MPLADS_AS_OF, platform_last_synced=_now(),
+        ))
+    db.session.commit()
+    print(f"  MPLADS reference context ({len(MPLADS_STATE_DATA)} states, real data as of {MPLADS_AS_OF}): OK")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1136,6 +1188,7 @@ def run():
         db.session.commit()
         state_flagship_cluster = seed_multi_state_demand_data(citizen_ids_by_state)
         seed_multi_state_projects(state_flagship_cluster)
+        seed_mplads_reference()
         print("Seed complete.")
 
 

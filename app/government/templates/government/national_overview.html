@@ -104,6 +104,43 @@
     </section>
   </div>
 
+  {% if mplads_rows %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-building"/></svg> MPLADS fund utilization — by state</h2>
+    <p class="dashboard-section__hint">Real public MPLADS figures ({{ mplads_rows[0].summary.lok_sabha_term }}) across every state on the platform — context for where recommended works are (or aren't) converting into completed spend. NEVO does not allocate or disburse MPLADS funds; the scheme's MPs recommend works, and the district authority sanctions and implements them.</p>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>State</th>
+          <th>MPs</th>
+          <th>Allocated</th>
+          <th>Spent</th>
+          <th>Utilization</th>
+          <th>Works completed / recommended</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in mplads_rows %}
+          {% set m = row.summary %}
+          <tr>
+            <td>{{ row.state_name }}</td>
+            <td>{{ m.mp_count }}</td>
+            <td>₹{{ "%.1f"|format(m.total_allocated / 10000000) }} Cr</td>
+            <td>₹{{ "%.1f"|format(m.total_expenditure / 10000000) }} Cr</td>
+            <td>{{ m.fund_utilization_pct }}%</td>
+            <td>{{ m.works_completed }} / {{ m.works_recommended }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="alignment-breakdown__note">
+      Source:
+      <a href="{{ mplads_rows[0].summary.source_url }}" target="_blank" rel="noopener">{{ mplads_rows[0].summary.source }}</a>
+      · as of {{ mplads_rows[0].summary.source_last_updated.strftime('%d %b %Y') if mplads_rows[0].summary.source_last_updated else 'unknown' }}
+    </p>
+  </section>
+  {% endif %}
+
   {% if needs_attention %}
   <section class="dashboard-section">
     <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-alert-triangle"/></svg> Requires attention</h2>
