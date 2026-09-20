@@ -27,6 +27,7 @@
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 from flask import request, Response, jsonify
@@ -55,6 +56,249 @@ CONVERSATION_WINDOW_MINUTES = 45
 # repro: "what type of problem" / "where is it" alternating indefinitely
 # because each reply used to be extracted in total isolation from the last).
 MAX_CLARIFICATION_TURNS = 2
+
+
+# ---------------------------------------------------------------------------
+# Multilingual bot replies — English, Hindi, Marathi, Kannada, Gujarati,
+# Tamil, Bengali. A contact's preferred language (set explicitly via "reply
+# in Hindi" etc., persisted on WhatsAppMessageLog.preferred_language) picks
+# which of these is used; falling back to whatever language Groq detected
+# in the citizen's own message, then English — never a raw English string
+# silently shown to someone who explicitly asked for another language.
+# ---------------------------------------------------------------------------
+
+SUPPORTED_LANGUAGES = ("en", "hi", "mr", "kn", "gu", "ta", "bn")
+
+_LANGUAGE_ALIASES = {
+    "english": "en", "eng": "en", "angrezi": "en",
+    "hindi": "hi", "हिंदी": "hi", "हिन्दी": "hi",
+    "marathi": "mr", "मराठी": "mr",
+    "kannada": "kn", "ಕನ್ನಡ": "kn",
+    "gujarati": "gu", "ગુજરાતી": "gu",
+    "tamil": "ta", "தமிழ்": "ta",
+    "bengali": "bn", "bangla": "bn", "বাংলা": "bn",
+}
+
+_GREETING_WORDS = {
+    "hi", "hii", "hiii", "hello", "helo", "hey", "yo", "start", "help",
+    "menu", "namaste", "namaskar", "vanakkam",
+}
+
+_LANG_SWITCH_RE = re.compile(
+    r"(?:speak|reply|talk|respond|answer)\s+(?:to\s+me\s+)?(?:back\s+)?in\s+([a-zA-Zऀ-ॿಀ-೿઀-૿஀-௿ঀ-৿]+)"
+    r"|switch\s+to\s+([a-zA-Z]+)"
+    r"|^([a-zA-Zऀ-ॿ]+)\s+(?:me\s+)?(?:bolo|bol|bat|jawab)",
+    re.IGNORECASE,
+)
+
+
+def _detect_language_switch(text: str) -> str | None:
+    """A contact explicitly asking to change reply language ("reply in
+    Hindi", "switch to Tamil", "hindi me bolo") -> ISO code, else None.
+    Deliberately narrow (a real command, not just mentioning a language
+    name in a report) so it never misfires on an actual issue description."""
+    m = _LANG_SWITCH_RE.search(text.strip())
+    if not m:
+        return None
+    candidate = next((g for g in m.groups() if g), "").strip().lower()
+    return _LANGUAGE_ALIASES.get(candidate)
+
+
+def _is_greeting(text: str) -> bool:
+    """A bare greeting/help request, not an actual issue report — short
+    message whose words are entirely greeting/help vocabulary."""
+    t = text.strip().lower().rstrip("!.?")
+    if not t or len(t) > 25:
+        return False
+    words = re.split(r"[\s,]+", t)
+    return all(w in _GREETING_WORDS for w in words)
+
+
+def _get_preferred_language(from_number_hash: str) -> str | None:
+    """The most recent explicit language choice this contact made, if any."""
+    row = (
+        WhatsAppMessageLog.query
+        .filter(
+            WhatsAppMessageLog.from_number_hash == from_number_hash,
+            WhatsAppMessageLog.preferred_language.isnot(None),
+        )
+        .order_by(WhatsAppMessageLog.created_at.desc())
+        .first()
+    )
+    return row.preferred_language if row else None
+
+
+_WELCOME_MESSAGES = {
+    "en": (
+        "👋 *Welcome to NEVO!*\n\n"
+        "Report local civic issues in seconds — no forms, no app, no login.\n\n"
+        "📝 Just *describe your problem* in text, 🎙️ a voice note, or 📸 a photo with a caption:\n"
+        "  💧 Water & Sanitation   🕳️ Roads & Transport\n"
+        "  🏥 Healthcare Access   💡 Electricity & Utilities\n"
+        "  📚 Education Access   🗑️ Waste & Environment\n\n"
+        "We'll ask for your *location* if needed, then confirm once it's reported ✅\n\n"
+        "🌐 Message me in *any Indian language* — Hindi, Marathi, Kannada, Gujarati, Tamil, "
+        "Bengali, or English. Say \"reply in Hindi\" (or any language) any time to switch.\n\n"
+        "Just type your issue to get started 👇"
+    ),
+    "hi": (
+        "👋 *NEVO में आपका स्वागत है!*\n\n"
+        "स्थानीय नागरिक समस्याएं सेकंडों में दर्ज करें — कोई फॉर्म नहीं, कोई ऐप नहीं, कोई लॉगिन नहीं।\n\n"
+        "📝 अपनी समस्या टेक्स्ट में बताएं, 🎙️ वॉइस नोट भेजें, या 📸 कैप्शन के साथ फोटो भेजें:\n"
+        "  💧 पानी और स्वच्छता   🕳️ सड़क और परिवहन\n"
+        "  🏥 स्वास्थ्य सेवा   💡 बिजली और उपयोगिताएँ\n"
+        "  📚 शिक्षा   🗑️ कचरा और पर्यावरण\n\n"
+        "ज़रूरत पड़ने पर हम आपका *स्थान* पूछेंगे, फिर रिपोर्ट दर्ज होने की पुष्टि करेंगे ✅\n\n"
+        "🌐 मुझे *किसी भी भारतीय भाषा* में लिखें — हिंदी, मराठी, कन्नड़, गुजराती, तमिल, बंगाली या अंग्रेज़ी। "
+        "भाषा बदलने के लिए कभी भी \"हिंदी में जवाब दो\" लिखें।\n\n"
+        "शुरू करने के लिए अपनी समस्या टाइप करें 👇"
+    ),
+    "mr": (
+        "👋 *NEVO मध्ये आपले स्वागत आहे!*\n\n"
+        "स्थानिक नागरी समस्या काही सेकंदांत नोंदवा — कोणताही फॉर्म नाही, अ‍ॅप नाही, लॉगिन नाही.\n\n"
+        "📝 तुमची समस्या मजकुरात सांगा, 🎙️ व्हॉइस नोट पाठवा, किंवा 📸 कॅप्शनसह फोटो पाठवा:\n"
+        "  💧 पाणी व स्वच्छता   🕳️ रस्ते व वाहतूक\n"
+        "  🏥 आरोग्य सेवा   💡 वीज व सुविधा\n"
+        "  📚 शिक्षण   🗑️ कचरा व पर्यावरण\n\n"
+        "गरज असल्यास आम्ही तुमचे *ठिकाण* विचारू, नंतर तक्रार नोंदवल्याची पुष्टी करू ✅\n\n"
+        "🌐 मला *कोणत्याही भारतीय भाषेत* लिहा — हिंदी, मराठी, कन्नड, गुजराती, तमिळ, बंगाली किंवा इंग्रजी. "
+        "भाषा बदलण्यासाठी कधीही \"मराठीत उत्तर द्या\" असे लिहा.\n\n"
+        "सुरू करण्यासाठी तुमची समस्या टाइप करा 👇"
+    ),
+    "kn": (
+        "👋 *NEVO ಗೆ ಸ್ವಾಗತ!*\n\n"
+        "ಸ್ಥಳೀಯ ನಾಗರಿಕ ಸಮಸ್ಯೆಗಳನ್ನು ಸೆಕೆಂಡುಗಳಲ್ಲಿ ವರದಿ ಮಾಡಿ — ಯಾವುದೇ ಫಾರ್ಮ್ ಇಲ್ಲ, ಆಪ್ ಇಲ್ಲ, ಲಾಗಿನ್ ಇಲ್ಲ.\n\n"
+        "📝 ನಿಮ್ಮ ಸಮಸ್ಯೆಯನ್ನು ಪಠ್ಯದಲ್ಲಿ ಬರೆಯಿರಿ, 🎙️ ಧ್ವನಿ ಸಂದೇಶ ಕಳುಹಿಸಿ, ಅಥವಾ 📸 ಶೀರ್ಷಿಕೆಯೊಂದಿಗೆ ಫೋಟೋ ಕಳುಹಿಸಿ:\n"
+        "  💧 ನೀರು ಮತ್ತು ನೈರ್ಮಲ್ಯ   🕳️ ರಸ್ತೆ ಮತ್ತು ಸಾರಿಗೆ\n"
+        "  🏥 ಆರೋಗ್ಯ ಸೇವೆ   💡 ವಿದ್ಯುತ್ ಮತ್ತು ಸೌಲಭ್ಯಗಳು\n"
+        "  📚 ಶಿಕ್ಷಣ   🗑️ ತ್ಯಾಜ್ಯ ಮತ್ತು ಪರಿಸರ\n\n"
+        "ಅಗತ್ಯವಿದ್ದರೆ ನಾವು ನಿಮ್ಮ *ಸ್ಥಳ* ಕೇಳುತ್ತೇವೆ, ನಂತರ ವರದಿಯಾಗಿದೆ ಎಂದು ಖಚಿತಪಡಿಸುತ್ತೇವೆ ✅\n\n"
+        "🌐 ನನಗೆ *ಯಾವುದೇ ಭಾರತೀಯ ಭಾಷೆಯಲ್ಲಿ* ಬರೆಯಿರಿ — ಹಿಂದಿ, ಮರಾಠಿ, ಕನ್ನಡ, ಗುಜರಾತಿ, ತಮಿಳು, ಬಂಗಾಳಿ ಅಥವಾ ಇಂಗ್ಲಿಷ್. "
+        "ಭಾಷೆ ಬದಲಾಯಿಸಲು ಯಾವಾಗ ಬೇಕಾದರೂ \"ಕನ್ನಡದಲ್ಲಿ ಉತ್ತರಿಸಿ\" ಎಂದು ಬರೆಯಿರಿ.\n\n"
+        "ಪ್ರಾರಂಭಿಸಲು ನಿಮ್ಮ ಸಮಸ್ಯೆಯನ್ನು ಟೈಪ್ ಮಾಡಿ 👇"
+    ),
+    "gu": (
+        "👋 *NEVO માં તમારું સ્વાગત છે!*\n\n"
+        "સ્થાનિક નાગરિક સમસ્યાઓ સેકંડોમાં નોંધાવો — કોઈ ફોર્મ નહીં, એપ નહીં, લોગિન નહીં.\n\n"
+        "📝 તમારી સમસ્યા ટેક્સ્ટમાં લખો, 🎙️ વોઇસ નોટ મોકલો, અથવા 📸 કેપ્શન સાથે ફોટો મોકલો:\n"
+        "  💧 પાણી અને સ્વચ્છતા   🕳️ રસ્તા અને પરિવહન\n"
+        "  🏥 આરોગ્ય સેવા   💡 વીજળી અને સુવિધાઓ\n"
+        "  📚 શિક્ષણ   🗑️ કચરો અને પર્યાવરણ\n\n"
+        "જરૂર પડે તો અમે તમારું *સ્થાન* પૂછીશું, પછી નોંધાયાની પુષ્ટિ કરીશું ✅\n\n"
+        "🌐 મને *કોઈપણ ભારતીય ભાષામાં* લખો — હિન્દી, મરાઠી, કન્નડ, ગુજરાતી, તમિલ, બંગાળી અથવા અંગ્રેજી. "
+        "ભાષા બદલવા માટે કોઈપણ સમયે \"ગુજરાતીમાં જવાબ આપો\" લખો.\n\n"
+        "શરૂ કરવા માટે તમારી સમસ્યા ટાઈપ કરો 👇"
+    ),
+    "ta": (
+        "👋 *NEVO-வுக்கு வரவேற்கிறோம்!*\n\n"
+        "உள்ளூர் குடிமக்கள் பிரச்சினைகளை நொடிகளில் புகார் செய்யுங்கள் — படிவம் இல்லை, ஆப் இல்லை, லாகின் இல்லை.\n\n"
+        "📝 உங்கள் பிரச்சினையை உரையாக எழுதுங்கள், 🎙️ குரல் குறிப்பு அனுப்புங்கள், அல்லது 📸 தலைப்புடன் புகைப்படம் அனுப்புங்கள்:\n"
+        "  💧 நீர் & சுகாதாரம்   🕳️ சாலை & போக்குவரத்து\n"
+        "  🏥 சுகாதார அணுகல்   💡 மின்சாரம் & பயன்பாடுகள்\n"
+        "  📚 கல்வி   🗑️ கழிவு & சுற்றுச்சூழல்\n\n"
+        "தேவைப்பட்டால் உங்கள் *இடம்* கேட்போம், பின்னர் புகார் பதிவானதை உறுதிசெய்வோம் ✅\n\n"
+        "🌐 எனக்கு *எந்த இந்திய மொழியிலும்* எழுதுங்கள் — இந்தி, மராத்தி, கன்னடம், குஜராத்தி, தமிழ், பெங்காலி அல்லது ஆங்கிலம். "
+        "மொழியை மாற்ற எப்போது வேண்டுமானாலும் \"தமிழில் பதில் சொல்\" என எழுதுங்கள்.\n\n"
+        "தொடங்க உங்கள் பிரச்சினையை டைப் செய்யுங்கள் 👇"
+    ),
+    "bn": (
+        "👋 *NEVO-তে স্বাগতম!*\n\n"
+        "স্থানীয় নাগরিক সমস্যা সেকেন্ডে রিপোর্ট করুন — কোনো ফর্ম নেই, অ্যাপ নেই, লগইন নেই।\n\n"
+        "📝 আপনার সমস্যা টেক্সটে লিখুন, 🎙️ ভয়েস নোট পাঠান, বা 📸 ক্যাপশন দিয়ে ছবি পাঠান:\n"
+        "  💧 পানি ও স্যানিটেশন   🕳️ রাস্তা ও পরিবহন\n"
+        "  🏥 স্বাস্থ্যসেবা   💡 বিদ্যুৎ ও ইউটিলিটি\n"
+        "  📚 শিক্ষা   🗑️ বর্জ্য ও পরিবেশ\n\n"
+        "প্রয়োজনে আমরা আপনার *অবস্থান* জিজ্ঞাসা করব, তারপর রিপোর্ট হয়েছে তা নিশ্চিত করব ✅\n\n"
+        "🌐 আমাকে *যেকোনো ভারতীয় ভাষায়* লিখুন — হিন্দি, মারাঠি, কন্নড়, গুজরাটি, তামিল, বাংলা বা ইংরেজি। "
+        "ভাষা পরিবর্তনের জন্য যেকোনো সময় \"বাংলায় উত্তর দাও\" লিখুন।\n\n"
+        "শুরু করতে আপনার সমস্যাটি টাইপ করুন 👇"
+    ),
+}
+
+_LANGUAGE_SELF_NAMES = {
+    "en": "English", "hi": "हिंदी", "mr": "मराठी", "kn": "ಕನ್ನಡ",
+    "gu": "ગુજરાતી", "ta": "தமிழ்", "bn": "বাংলা",
+}
+
+_BOT_MESSAGES = {
+    "lang_switched": {
+        "en": "👍 Okay, I'll reply in {lang} from now on.",
+        "hi": "👍 ठीक है, अब मैं {lang} में जवाब दूंगा।",
+        "mr": "👍 ठीक आहे, आता मी {lang} मध्ये उत्तर देईन.",
+        "kn": "👍 ಸರಿ, ಇನ್ನು ಮುಂದೆ ನಾನು {lang} ನಲ್ಲಿ ಉತ್ತರಿಸುತ್ತೇನೆ.",
+        "gu": "👍 ભલે, હવે હું {lang} માં જવાબ આપીશ.",
+        "ta": "👍 சரி, இப்போதிலிருந்து நான் {lang} இல் பதிலளிக்கிறேன்.",
+        "bn": "👍 ঠিক আছে, এখন থেকে আমি {lang} এ উত্তর দেব।",
+    },
+    "need_description": {
+        "en": "📝 Please describe the community need you'd like to report — in text, a voice note, or a photo with a short caption.",
+        "hi": "📝 कृपया वह समस्या बताएं जो आप दर्ज करना चाहते हैं — टेक्स्ट, वॉइस नोट, या कैप्शन के साथ फोटो में।",
+        "mr": "📝 कृपया तुम्ही नोंदवायची असलेली समस्या सांगा — मजकूर, व्हॉइस नोट, किंवा कॅप्शनसह फोटोमध्ये.",
+        "kn": "📝 ದಯವಿಟ್ಟು ನೀವು ವರದಿ ಮಾಡಲು ಬಯಸುವ ಸಮಸ್ಯೆಯನ್ನು ವಿವರಿಸಿ — ಪಠ್ಯ, ಧ್ವನಿ ಸಂದೇಶ, ಅಥವಾ ಶೀರ್ಷಿಕೆಯೊಂದಿಗೆ ಫೋಟೋದಲ್ಲಿ.",
+        "gu": "📝 કૃપા કરી તમે નોંધાવવા માંગતા હો તે સમસ્યા જણાવો — ટેક્સ્ટ, વોઇસ નોટ, અથવા કેપ્શન સાથે ફોટોમાં.",
+        "ta": "📝 நீங்கள் புகார் செய்ய விரும்பும் பிரச்சினையை விவரிக்கவும் — உரை, குரல் குறிப்பு, அல்லது தலைப்புடன் புகைப்படத்தில்.",
+        "bn": "📝 আপনি যে সমস্যাটি রিপোর্ট করতে চান তা বর্ণনা করুন — টেক্সট, ভয়েস নোট, বা ক্যাপশন সহ ছবিতে।",
+    },
+    "unsupported_media": {
+        "en": "We can read text, photos, or voice notes right now. Please send your community need as a text, photo, or voice message.",
+        "hi": "हम अभी टेक्स्ट, फोटो या वॉइस नोट पढ़ सकते हैं। कृपया अपनी समस्या टेक्स्ट, फोटो या वॉइस मैसेज के रूप में भेजें।",
+        "mr": "आम्ही आता मजकूर, फोटो किंवा व्हॉइस नोट वाचू शकतो. कृपया तुमची समस्या मजकूर, फोटो किंवा व्हॉइस मेसेज म्हणून पाठवा.",
+        "kn": "ನಾವು ಈಗ ಪಠ್ಯ, ಫೋಟೋ ಅಥವಾ ಧ್ವನಿ ಸಂದೇಶಗಳನ್ನು ಓದಬಹುದು. ದಯವಿಟ್ಟು ನಿಮ್ಮ ಸಮಸ್ಯೆಯನ್ನು ಪಠ್ಯ, ಫೋಟೋ ಅಥವಾ ಧ್ವನಿ ಸಂದೇಶವಾಗಿ ಕಳುಹಿಸಿ.",
+        "gu": "અમે અત્યારે ટેક્સ્ટ, ફોટો અથવા વોઇસ નોટ વાંચી શકીએ છીએ. કૃપા કરી તમારી સમસ્યા ટેક્સ્ટ, ફોટો અથવા વોઇસ મેસેજ તરીકે મોકલો.",
+        "ta": "நாங்கள் இப்போது உரை, புகைப்படம் அல்லது குரல் குறிப்புகளைப் படிக்க முடியும். உங்கள் பிரச்சினையை உரை, புகைப்படம் அல்லது குரல் செய்தியாக அனுப்பவும்.",
+        "bn": "আমরা এখন টেক্সট, ছবি বা ভয়েস নোট পড়তে পারি। আপনার সমস্যাটি টেক্সট, ছবি বা ভয়েস মেসেজ হিসেবে পাঠান।",
+    },
+    "processing_error": {
+        "en": "😕 Sorry, something went wrong processing your message. Please try again shortly.",
+        "hi": "😕 माफ़ करें, आपका मैसेज प्रोसेस करने में कुछ गड़बड़ हुई। कृपया थोड़ी देर बाद फिर से प्रयास करें।",
+        "mr": "😕 माफ करा, तुमचा मेसेज प्रोसेस करताना काहीतरी चुकले. कृपया थोड्या वेळाने पुन्हा प्रयत्न करा.",
+        "kn": "😕 ಕ್ಷಮಿಸಿ, ನಿಮ್ಮ ಸಂದೇಶವನ್ನು ಪ್ರಕ್ರಿಯೆಗೊಳಿಸುವಲ್ಲಿ ಏನೋ ತಪ್ಪಾಗಿದೆ. ದಯವಿಟ್ಟು ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+        "gu": "😕 માફ કરશો, તમારો સંદેશ પ્રોસેસ કરવામાં કંઈક ગડબડ થઈ. કૃપા કરી થોડી વાર પછી ફરી પ્રયાસ કરો.",
+        "ta": "😕 மன்னிக்கவும், உங்கள் செய்தியை செயலாக்குவதில் ஏதோ தவறு நடந்தது. சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.",
+        "bn": "😕 দুঃখিত, আপনার বার্তা প্রক্রিয়া করতে সমস্যা হয়েছে। অনুগ্রহ করে কিছুক্ষণ পরে আবার চেষ্টা করুন।",
+    },
+    "join_existing": {
+        "en": "✅ *Thank you!* This matches a community issue already reported by *{n}* other people nearby. You've been added to it — we'll keep this linked to your number so you can be updated.",
+        "hi": "✅ *धन्यवाद!* यह पास के *{n}* अन्य लोगों द्वारा पहले से दर्ज एक सामुदायिक समस्या से मेल खाता है। आपको इसमें जोड़ दिया गया है — हम इसे आपके नंबर से जोड़ रखेंगे ताकि आपको सूचित किया जा सके।",
+        "mr": "✅ *धन्यवाद!* हे जवळपासच्या *{n}* इतर लोकांनी आधीच नोंदवलेल्या सामुदायिक समस्येशी जुळते. तुम्हाला त्यात जोडले आहे — पुढील माहितीसाठी हे तुमच्या नंबरशी जोडलेले राहील.",
+        "kn": "✅ *ಧನ್ಯವಾದಗಳು!* ಇದು ಹತ್ತಿರದ *{n}* ಇತರ ಜನರು ಈಗಾಗಲೇ ವರದಿ ಮಾಡಿದ ಸಮುದಾಯ ಸಮಸ್ಯೆಗೆ ಹೊಂದಿಕೆಯಾಗುತ್ತದೆ. ನಿಮ್ಮನ್ನು ಅದಕ್ಕೆ ಸೇರಿಸಲಾಗಿದೆ — ಅಪ್‌ಡೇಟ್‌ಗಳಿಗಾಗಿ ಇದನ್ನು ನಿಮ್ಮ ಸಂಖ್ಯೆಗೆ ಲಿಂಕ್ ಮಾಡಿ ಇಡುತ್ತೇವೆ.",
+        "gu": "✅ *આભાર!* આ નજીકના *{n}* અન્ય લોકો દ્વારા પહેલેથી નોંધાયેલ સામુદાયિક સમસ્યા સાથે મેળ ખાય છે. તમને તેમાં ઉમેરવામાં આવ્યા છે — અપડેટ માટે આ તમારા નંબર સાથે જોડાયેલું રાખીશું.",
+        "ta": "✅ *நன்றி!* இது அருகிலுள்ள *{n}* மற்றவர்களால் ஏற்கனவே புகாரளிக்கப்பட்ட ஒரு சமூகப் பிரச்சினையுடன் பொருந்துகிறது. நீங்கள் அதில் சேர்க்கப்பட்டுள்ளீர்கள் — புதுப்பிப்புகளுக்காக இதை உங்கள் எண்ணுடன் இணைத்து வைப்போம்.",
+        "bn": "✅ *ধন্যবাদ!* এটি কাছাকাছি *{n}* জন অন্য মানুষ ইতিমধ্যে রিপোর্ট করা একটি সম্প্রদায় সমস্যার সাথে মিলে যায়। আপনাকে এতে যুক্ত করা হয়েছে — আপডেটের জন্য এটি আপনার নম্বরের সাথে যুক্ত রাখা হবে।",
+    },
+    "new_cluster": {
+        "en": "✅ *Thank you!* Your report has been recorded as a new community issue. We'll let you know if other people report the same problem.",
+        "hi": "✅ *धन्यवाद!* आपकी रिपोर्ट एक नई सामुदायिक समस्या के रूप में दर्ज कर ली गई है। यदि अन्य लोग भी यही समस्या बताते हैं, तो हम आपको सूचित करेंगे।",
+        "mr": "✅ *धन्यवाद!* तुमची तक्रार नवीन सामुदायिक समस्या म्हणून नोंदवली गेली आहे. इतर लोकांनी हीच समस्या नोंदवली तर आम्ही तुम्हाला कळवू.",
+        "kn": "✅ *ಧನ್ಯವಾದಗಳು!* ನಿಮ್ಮ ವರದಿಯನ್ನು ಹೊಸ ಸಮುದಾಯ ಸಮಸ್ಯೆಯಾಗಿ ದಾಖಲಿಸಲಾಗಿದೆ. ಇತರರು ಅದೇ ಸಮಸ್ಯೆಯನ್ನು ವರದಿ ಮಾಡಿದರೆ ನಾವು ನಿಮಗೆ ತಿಳಿಸುತ್ತೇವೆ.",
+        "gu": "✅ *આભાર!* તમારો રિપોર્ટ નવી સામુદાયિક સમસ્યા તરીકે નોંધાયો છે. જો અન્ય લોકો પણ આ જ સમસ્યા નોંધાવે, તો અમે તમને જણાવીશું.",
+        "ta": "✅ *நன்றி!* உங்கள் அறிக்கை புதிய சமூகப் பிரச்சினையாக பதிவு செய்யப்பட்டுள்ளது. மற்றவர்களும் இதே பிரச்சினையை புகாரளித்தால் நாங்கள் உங்களுக்குத் தெரிவிப்போம்.",
+        "bn": "✅ *ধন্যবাদ!* আপনার রিপোর্টটি একটি নতুন সম্প্রদায় সমস্যা হিসেবে রেকর্ড করা হয়েছে। অন্য কেউ একই সমস্যা রিপোর্ট করলে আমরা আপনাকে জানাব।",
+    },
+    "give_up": {
+        "en": "✅ Thank you — we've recorded what you've shared so far. A reviewer will follow up if we need anything else.",
+        "hi": "✅ धन्यवाद — आपने अब तक जो बताया है वह दर्ज कर लिया गया है। ज़रूरत होने पर एक रिव्यूअर आपसे संपर्क करेगा।",
+        "mr": "✅ धन्यवाद — तुम्ही आतापर्यंत जे सांगितले ते नोंदवले गेले आहे. आणखी काही हवे असल्यास एक रिव्ह्यूअर संपर्क करेल.",
+        "kn": "✅ ಧನ್ಯವಾದಗಳು — ನೀವು ಇಲ್ಲಿಯವರೆಗೆ ಹಂಚಿಕೊಂಡದ್ದನ್ನು ದಾಖಲಿಸಲಾಗಿದೆ. ಇನ್ನೇನಾದರೂ ಬೇಕಿದ್ದರೆ ಪರಿಶೀಲಕರು ಸಂಪರ್ಕಿಸುತ್ತಾರೆ.",
+        "gu": "✅ આભાર — તમે અત્યાર સુધી જે જણાવ્યું તે નોંધાયું છે. વધુ જરૂર પડે તો રિવ્યુઅર તમારો સંપર્ક કરશે.",
+        "ta": "✅ நன்றி — நீங்கள் இதுவரை பகிர்ந்ததை பதிவு செய்துள்ளோம். மேலும் தேவைப்பட்டால் ஒரு மதிப்பாய்வாளர் தொடர்பு கொள்வார்.",
+        "bn": "✅ ধন্যবাদ — আপনি এখন পর্যন্ত যা শেয়ার করেছেন তা রেকর্ড করা হয়েছে। আরও প্রয়োজন হলে একজন পর্যালোচক যোগাযোগ করবেন।",
+    },
+}
+
+
+def _bot_msg(key: str, reply_lang: str, **kwargs) -> str:
+    d = _BOT_MESSAGES.get(key, {})
+    template = d.get(reply_lang) or d.get("en") or ""
+    return template.format(**kwargs) if kwargs else template
+
+
+def _resolve_reply_language(preferred_language: str | None, detected_language: str | None) -> str:
+    if preferred_language in SUPPORTED_LANGUAGES:
+        return preferred_language
+    if detected_language in SUPPORTED_LANGUAGES:
+        return detected_language
+    return "en"
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +409,7 @@ def _find_open_draft(anonymous_token: str):
 def _process_intake_message(
     raw_text: str, from_number: str, log_row: WhatsAppMessageLog,
     image_bytes: bytes | None = None, image_content_type: str | None = None,
+    preferred_language: str | None = None,
 ) -> str:
     country = Country.query.filter_by(code="IN").first()
     country_id = country.id if country else None
@@ -263,11 +508,15 @@ def _process_intake_message(
     db.session.add(EventLog(report_id=report.id, stage="AIUnderstood",
                              metadata_={"summary": extracted.get("problem_summary", "")}))
 
+    reply_lang = _resolve_reply_language(preferred_language, extracted.get("language_detected"))
+
     if status == "Draft":
         try:
-            clarification = groq_client.ask_clarification(raw_text, meta.get("missing_fields") or [])
+            clarification = groq_client.ask_clarification(
+                raw_text, meta.get("missing_fields") or [], preferred_language=preferred_language,
+            )
         except Exception:
-            clarification = "Could you share a bit more detail — what is the problem, and where is it happening?"
+            clarification = _bot_msg("need_description", reply_lang)
         db.session.commit()
         return clarification
 
@@ -277,10 +526,7 @@ def _process_intake_message(
         # Save what we have for a human reviewer rather than keep looping
         # or silently dropping the citizen's report.
         db.session.commit()
-        return (
-            "Thank you — we've recorded what you've shared so far. "
-            "A reviewer will follow up if we need anything else."
-        )
+        return _bot_msg("give_up", reply_lang)
 
     match_result = None
     if category_id and country_id:
@@ -303,11 +549,7 @@ def _process_intake_message(
         db.session.commit()
         cluster = db.session.get(DemandCluster, cluster_id)
         contributors = cluster.unique_contributors if cluster else None
-        return (
-            f"Thank you — this matches a community issue already reported by "
-            f"{contributors or 'several'} other people nearby. You've been added to it. "
-            "We'll keep this linked to your number so you can be updated."
-        )
+        return _bot_msg("join_existing", reply_lang, n=contributors or "several")
 
     cluster = DemandCluster(
         country_id=country_id, region_ids=[region_id] if region_id else [],
@@ -327,10 +569,7 @@ def _process_intake_message(
     report.status = "Clustered"
     db.session.add(EventLog(report_id=report.id, demand_cluster_id=cluster.id, stage="JoinedDemand"))
     db.session.commit()
-    return (
-        "Thank you — your report has been recorded as a new community issue. "
-        "We'll let you know if other people report the same problem."
-    )
+    return _bot_msg("new_cluster", reply_lang)
 
 
 def _groq_model_name() -> str:
@@ -364,12 +603,32 @@ def webhook():
         logger.info("Duplicate WhatsApp delivery for %s — not reprocessing.", message_sid)
         return _twiml("We already received this message — thank you.")
 
+    from_hash = _phone_hash(from_number)
     log_row = WhatsAppMessageLog(
-        message_sid=message_sid, from_number_hash=_phone_hash(from_number), status="received",
+        message_sid=message_sid, from_number_hash=from_hash, status="received",
     )
     db.session.add(log_row)
     db.session.commit()
     logger.info("WhatsApp message received: sid=%s media=%s", message_sid, num_media)
+
+    preferred_language = _get_preferred_language(from_hash)
+
+    # Explicit language-switch command ("reply in Hindi") — never runs the
+    # report pipeline at all, so it can't be misread as an issue description.
+    new_lang = _detect_language_switch(body) if body else None
+    if new_lang:
+        log_row.preferred_language = new_lang
+        log_row.status = "processed"
+        db.session.commit()
+        return _twiml(_bot_msg("lang_switched", new_lang, lang=_LANGUAGE_SELF_NAMES[new_lang]))
+
+    # Bare greeting ("hi", "help", "menu") — send the welcome/help message
+    # instead of trying (and failing) to extract a report from "hi".
+    if body and _is_greeting(body):
+        log_row.status = "processed"
+        db.session.commit()
+        reply_lang = preferred_language or "en"
+        return _twiml(_WELCOME_MESSAGES.get(reply_lang, _WELCOME_MESSAGES["en"]))
 
     try:
         raw_text = body
@@ -389,10 +648,7 @@ def webhook():
                 log_row.status = "failed"
                 log_row.error_message = f"Unsupported media type: {media_type or 'unknown'}"
                 db.session.commit()
-                return _twiml(
-                    "We can read text, photos, or voice notes right now. "
-                    "Please send your community need as a text, photo, or voice message."
-                )
+                return _twiml(_bot_msg("unsupported_media", preferred_language or "en"))
 
         anonymous_token = f"whatsapp:{log_row.from_number_hash}"
         if not raw_text and image_bytes and _find_open_draft(anonymous_token):
@@ -405,13 +661,11 @@ def webhook():
             log_row.status = "failed"
             log_row.error_message = "Empty message"
             db.session.commit()
-            return _twiml(
-                "Please describe the community need you'd like to report — "
-                "in text, a voice note, or a photo with a short caption."
-            )
+            return _twiml(_bot_msg("need_description", preferred_language or "en"))
 
         reply_text = _process_intake_message(
             raw_text, from_number, log_row, image_bytes=image_bytes, image_content_type=image_content_type,
+            preferred_language=preferred_language,
         )
         log_row.status = "processed"
         db.session.commit()
@@ -422,7 +676,7 @@ def webhook():
         log_row.status = "failed"
         log_row.error_message = f"{type(e).__name__}: {str(e)[:500]}"
         db.session.commit()
-        return _twiml("Sorry, something went wrong processing your message. Please try again shortly.")
+        return _twiml(_bot_msg("processing_error", preferred_language or "en"))
 
 
 @whatsapp_bp.route("/test-send", methods=["POST"])
@@ -452,15 +706,33 @@ def test_send():
     if not text:
         return jsonify({"error": "text is required"}), 400
 
+    from_hash = _phone_hash(from_number)
     fake_sid = "test-" + hashlib.sha256((from_number + text + str(datetime.now(timezone.utc))).encode()).hexdigest()[:24]
     log_row = WhatsAppMessageLog(
-        message_sid=fake_sid, from_number_hash=_phone_hash(from_number), status="received",
+        message_sid=fake_sid, from_number_hash=from_hash, status="received",
     )
     db.session.add(log_row)
     db.session.commit()
 
+    preferred_language = _get_preferred_language(from_hash)
+
+    new_lang = _detect_language_switch(text)
+    if new_lang:
+        log_row.preferred_language = new_lang
+        log_row.status = "processed"
+        db.session.commit()
+        reply = _bot_msg("lang_switched", new_lang, lang=_LANGUAGE_SELF_NAMES[new_lang])
+        return jsonify({"reply": reply, "report_id": None, "message_sid": fake_sid})
+
+    if _is_greeting(text):
+        log_row.status = "processed"
+        db.session.commit()
+        reply_lang = preferred_language or "en"
+        reply = _WELCOME_MESSAGES.get(reply_lang, _WELCOME_MESSAGES["en"])
+        return jsonify({"reply": reply, "report_id": None, "message_sid": fake_sid})
+
     try:
-        reply = _process_intake_message(text, from_number, log_row)
+        reply = _process_intake_message(text, from_number, log_row, preferred_language=preferred_language)
         log_row.status = "processed"
         db.session.commit()
         return jsonify({"reply": reply, "report_id": log_row.report_id, "message_sid": fake_sid})

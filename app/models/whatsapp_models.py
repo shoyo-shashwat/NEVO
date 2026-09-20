@@ -36,6 +36,13 @@ class WhatsAppMessageLog(db.Model):
     report_id = db.Column(db.String(36), db.ForeignKey("reports.id"), nullable=True)
     error_message = db.Column(db.Text, nullable=True)
 
+    # Set only on the turn a contact explicitly asks to switch language
+    # ("reply in Hindi" etc.) — the most recent non-null value for a given
+    # from_number_hash is that contact's standing preference, read back by
+    # app/whatsapp/routes.py::_get_preferred_language(). Most rows leave
+    # this null (no language switch requested that turn).
+    preferred_language = db.Column(db.String(10), nullable=True)
+
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False,
         default=lambda: datetime.now(timezone.utc),

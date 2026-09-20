@@ -188,7 +188,13 @@ def extract_report_fields(raw_text: str) -> dict:
     return fields
 
 
-def ask_clarification(raw_text: str, missing_fields: list[str]) -> str:
+_LANGUAGE_NAMES = {
+    "en": "English", "hi": "Hindi", "mr": "Marathi", "kn": "Kannada",
+    "gu": "Gujarati", "ta": "Tamil", "bn": "Bengali",
+}
+
+
+def ask_clarification(raw_text: str, missing_fields: list[str], preferred_language: str | None = None) -> str:
     """
     Generate 1–3 targeted clarification questions for a Draft report.
 
@@ -198,21 +204,32 @@ def ask_clarification(raw_text: str, missing_fields: list[str]) -> str:
     ----------
     raw_text       : the citizen's original input
     missing_fields : list of field names that are null (subset of ["category", "location"])
+    preferred_language : ISO 639-1 code (en/hi/mr/kn/gu/ta/bn) to force the reply
+        into regardless of the input's own language — set when a channel (e.g.
+        WhatsApp) has an explicit per-contact language preference. None keeps
+        the original "reply in the same language as the input" behaviour.
 
     Returns
     -------
     str — a short, natural-language question to ask the citizen.
-          Always in the same language as the original input.
+          In preferred_language if given, else the same language as the input.
     """
     client = _get_client()
 
     fields_str = " and ".join(missing_fields)
+    if preferred_language and preferred_language in _LANGUAGE_NAMES:
+        language_rule = (
+            f"Reply in {_LANGUAGE_NAMES[preferred_language]}, regardless of what "
+            "language the citizen's message is written in."
+        )
+    else:
+        language_rule = "Reply in the same language as the citizen's message."
     system = (
         "You are a helpful assistant for a citizen reporting platform. "
         "A citizen has described a local development problem but their message "
         f"is missing: {fields_str}. "
         "Ask ONE short, friendly follow-up question to obtain the missing information. "
-        "Reply in the same language as the citizen's message. "
+        f"{language_rule} "
         "Do not explain why you are asking. Do not use jargon."
     )
 
