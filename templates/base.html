@@ -4,37 +4,239 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}BRICS People First{% endblock %}</title>
+  <meta name="theme-color" content="#E2582A">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body>
+{% set _wide_endpoints = ['government.dashboard', 'government.demand_map', 'government.projects_outcomes',
+                          'government.admin', 'citizen.community', 'citizen.demand_map', 'citizen.impact',
+                          'government.demand_intelligence', 'government.national_overview',
+                          'government.investment_alignment_view', 'government.gap_analysis',
+                          'government.policy_insights', 'government.citizen_voice'] %}
+<body class="{% if session.get('role') in ['mp','planning_officer','admin','reviewer'] %}theme-gov{% else %}theme-citizen{% endif %}{% if request.endpoint in _wide_endpoints %} layout-wide{% endif %}">
 
+<!-- Shared inline icon sprite — no external icon library, kept dependency-free -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="icon-megaphone" viewBox="0 0 24 24"><path d="M3 11v2a2 2 0 0 0 2 2h1l3 6h2l-1-6h2l8 4V5l-8 4H8a2 2 0 0 0-2 2H5a2 2 0 0 0-2 2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 3v16M15 5v16" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 14.3c2.7.4 4.5 2.3 4.5 5.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v5l3.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="M5 13l4 4 10-11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-camera" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.6 7-12a7 7 0 1 0-14 0c0 5.4 7 12 7 12Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+    <symbol id="icon-building" viewBox="0 0 24 24"><path d="M4 21V9l8-5 8 5v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 21v-6h6v6M4 21h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.4-3 7.7-7 9-4-1.3-7-4.6-7-9V6l7-3Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 20V10M11 20V4M18 20v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="icon-signal" viewBox="0 0 24 24"><path d="M4 18a12 12 0 0 1 16 0M7.5 14.2a7 7 0 0 1 9 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="19" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="icon-alert-triangle" viewBox="0 0 24 24"><path d="M12 4 2.5 20h19L12 4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 10.5v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1" fill="currentColor"/></symbol>
+    <symbol id="icon-clipboard-check" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.6"/><path d="M8.5 13l2.3 2.3L15.5 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+    <!-- Category icons — Demand Intelligence Map markers (Round 4 UI fix:
+         replaces plain colored dots with a category-specific icon so a
+         water problem looks different from a road problem at a glance). -->
+    <symbol id="icon-cat-water" viewBox="0 0 24 24"><path d="M12 3s7 8 7 13a7 7 0 0 1-14 0c0-5 7-13 7-13Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-road" viewBox="0 0 24 24"><path d="M8 21 11 3h2l3 18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 6.5v2.5M12 12v2.5M12 17.5v1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-electricity" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-education" viewBox="0 0 24 24"><path d="M3 5.5c2.3-1.3 5.7-1.3 8 0v14c-2.3-1.3-5.7-1.3-8 0v-14ZM21 5.5c-2.3-1.3-5.7-1.3-8 0v14c2.3-1.3 5.7-1.3 8 0v-14Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></symbol>
+    <symbol id="icon-cat-waste" viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-health" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></symbol>
+    <symbol id="icon-cat-default" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
+
+    <!-- Larger per-category illustrations — government evidence cards
+         (Progress Log / reference designs "image.png" & "what-needs.png"
+         show a themed illustration per demand card; no exported asset
+         exists for these, so they're hand-built as simple flat-style SVG
+         in the same muted palette as the rest of the illustrated art
+         rather than left blank. -->
+    <symbol id="illus-water_sanitation" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-info-bg)"/>
+      <rect x="24" y="16" width="16" height="16" rx="2" fill="none" stroke="var(--color-info)" stroke-width="2"/>
+      <path d="M32 32v6M26 44a6 6 0 0 1 12 0" fill="none" stroke="var(--color-info)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M20 22h-4M20 26h-2" stroke="var(--color-info)" stroke-width="2" stroke-linecap="round"/>
+      <path d="M32 44s3 3 3 6a3 3 0 0 1-6 0c0-3 3-6 3-6Z" fill="var(--color-info)"/>
+    </symbol>
+    <symbol id="illus-healthcare_access" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-danger-bg)"/>
+      <rect x="18" y="24" width="28" height="22" rx="2" fill="none" stroke="var(--color-danger)" stroke-width="2"/>
+      <path d="M26 24v-6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6" fill="none" stroke="var(--color-danger)" stroke-width="2"/>
+      <path d="M32 30v10M27 35h10" stroke="var(--color-danger)" stroke-width="2.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="illus-roads_transport" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-warning-bg)"/>
+      <path d="M26 46 30 16h4l4 30" fill="none" stroke="var(--color-warning)" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M31 24v4M31 32v4M31 40v3" stroke="var(--color-warning)" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="illus-electricity_utilities" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-p-high-bg)"/>
+      <path d="M35 14 20 36h10l-3 14 17-24H34l1-12Z" fill="var(--color-p-high)"/>
+    </symbol>
+    <symbol id="illus-education_access" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-success-bg)"/>
+      <path d="M32 22c-4-3-9-3-12 0v18c3-3 8-3 12 0 4-3 9-3 12 0V22c-3-3-8-3-12 0Z" fill="none" stroke="var(--color-success)" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M32 22v18" stroke="var(--color-success)" stroke-width="2"/>
+    </symbol>
+    <symbol id="illus-waste_environment" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="var(--color-bg-alt)"/>
+      <path d="M22 24h20M26 24v-4h12v4M24 24l2 22h12l2-22" fill="none" stroke="var(--color-muted)" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M29 29v12M35 29v12" stroke="var(--color-muted)" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- Hero illustrations — dashboard/projects page headers (reference
+         designs "what-needs.png" / "image.png" / "project-outcome.png").
+         No exported asset exists; simple flat-style SVG in the shared
+         muted palette, not a photorealistic reproduction. -->
+    <symbol id="illus-hero-chart" viewBox="0 0 120 90">
+      <rect x="4" y="46" width="14" height="34" rx="2" fill="var(--color-border)"/>
+      <rect x="24" y="30" width="14" height="50" rx="2" fill="var(--color-accent-tint)"/>
+      <rect x="44" y="52" width="14" height="28" rx="2" fill="var(--color-border)"/>
+      <rect x="64" y="14" width="14" height="66" rx="2" fill="var(--color-accent-tint)"/>
+      <circle cx="94" cy="34" r="20" fill="none" stroke="var(--color-border)" stroke-width="3"/>
+      <path d="M108 48l10 10" stroke="var(--color-border)" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="illus-hero-construction" viewBox="0 0 120 90">
+      <path d="M20 80V20M20 20h56M76 20v14" fill="none" stroke="var(--color-border)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M76 34l14 14" stroke="var(--color-border)" stroke-width="3" stroke-linecap="round"/>
+      <rect x="34" y="42" width="30" height="38" fill="var(--color-bg-alt)" stroke="var(--color-border)" stroke-width="2"/>
+      <rect x="40" y="50" width="6" height="8" fill="var(--color-border)"/>
+      <rect x="52" y="50" width="6" height="8" fill="var(--color-border)"/>
+      <rect x="46" y="64" width="8" height="16" fill="var(--color-border)"/>
+      <circle cx="18" cy="80" r="3" fill="var(--color-accent-tint)"/>
+    </symbol>
+    <symbol id="illus-hero-report" viewBox="0 0 100 120">
+      <rect x="30" y="6" width="40" height="108" rx="10" fill="var(--color-bg-alt)" stroke="var(--color-border)" stroke-width="2"/>
+      <rect x="38" y="18" width="24" height="30" rx="2" fill="#fff" stroke="var(--color-border)" stroke-width="1.5"/>
+      <path d="M42 26h16M42 32h16M42 38h10" stroke="var(--color-border)" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M50 54v34" stroke="var(--color-border)" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M6 30s5-10 12-10 12 10 12 10c0 7-8 14-12 17-4-3-12-10-12-17Z" fill="var(--color-accent)"/>
+      <circle cx="18" cy="29" r="4" fill="#fff"/>
+      <path d="M78 70s5-10 12-10 12 10 12 10c0 7-8 14-12 17-4-3-12-10-12-17Z" fill="var(--color-accent-tint)" stroke="var(--color-accent)" stroke-width="1.5"/>
+      <circle cx="90" cy="69" r="3.5" fill="var(--color-accent)"/>
+    </symbol>
+  </defs>
+</svg>
+
+{% set is_gov = session.get('role') in ['mp', 'planning_officer', 'admin', 'reviewer'] %}
 <header class="site-header">
-  <a href="{{ url_for('citizen.home') }}" class="site-logo">BRICS People First</a>
-  <nav class="site-nav">
-    {% if session.get('role') %}
-      <span class="nav-actor">{{ session.get('actor_name', '') }}</span>
-      <a href="{{ url_for('role_select') }}" class="nav-link">Switch role</a>
-    {% else %}
-      <a href="{{ url_for('role_select') }}" class="nav-link">Select role</a>
-    {% endif %}
-  </nav>
+  <div class="site-header__inner">
+    <a href="{{ url_for('role_select') }}" class="site-logo">
+      <span class="site-logo__mark" aria-hidden="true"></span>
+      <span class="site-logo__text">NEVO</span>
+    </a>
+
+    <nav class="site-nav-primary" aria-label="Main">
+      {% if is_gov %}
+          {# MP / reviewer — constituency lens #}
+          <a href="{{ url_for('government.dashboard') }}" class="site-nav-primary__link {% if request.endpoint == 'government.dashboard' %}site-nav-primary__link--active{% endif %}">Dashboard</a>
+          <a href="{{ url_for('government.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'government.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+          <a href="{{ url_for('government.citizen_voice') }}" class="site-nav-primary__link {% if request.endpoint == 'government.citizen_voice' %}site-nav-primary__link--active{% endif %}">Citizen Voice</a>
+          <a href="{{ url_for('government.projects_outcomes') }}" class="site-nav-primary__link {% if request.endpoint == 'government.projects_outcomes' %}site-nav-primary__link--active{% endif %}">Projects</a>
+          <a href="{{ url_for('government.reports') }}" class="site-nav-primary__link {% if request.endpoint == 'government.reports' %}site-nav-primary__link--active{% endif %}">Reports</a>
+        {% if session.get('role') == 'mp' %}
+          <a href="{{ url_for('government.national_overview') }}" class="site-nav-primary__link {% if request.endpoint == 'government.national_overview' %}site-nav-primary__link--active{% endif %}">National</a>
+        {% endif %}
+        {% if session.get('role') == 'admin' %}
+          <a href="{{ url_for('government.admin') }}" class="site-nav-primary__link {% if request.endpoint == 'government.admin' %}site-nav-primary__link--active{% endif %}">Admin</a>
+        {% endif %}
+      {% else %}
+        <a href="{{ url_for('citizen.home') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.home' %}site-nav-primary__link--active{% endif %}">Home</a>
+        <a href="{{ url_for('citizen.report_flow') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.report_flow' %}site-nav-primary__link--active{% endif %}">Report</a>
+        <a href="{{ url_for('citizen.community') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.community' %}site-nav-primary__link--active{% endif %}">Community</a>
+        <a href="{{ url_for('citizen.demand_map') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.demand_map' %}site-nav-primary__link--active{% endif %}">Map</a>
+        <a href="{{ url_for('citizen.my_timeline') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.my_timeline' %}site-nav-primary__link--active{% endif %}">My Timeline</a>
+        <a href="{{ url_for('citizen.impact') }}" class="site-nav-primary__link {% if request.endpoint == 'citizen.impact' %}site-nav-primary__link--active{% endif %}">Impact</a>
+        {% if session.get('actor_id') %}
+          <a href="{{ url_for('auth.account') }}" class="site-nav-primary__link {% if request.endpoint == 'auth.account' %}site-nav-primary__link--active{% endif %}">Profile</a>
+        {% endif %}
+      {% endif %}
+    </nav>
+
+    <div class="site-header__lang">
+      <span class="site-header__lang-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" width="15" height="15" fill="none">
+          <path d="M17.5 10c0 4.142-3.358 7.5-7.5 7.5M17.5 10C17.5 5.858 14.142 2.5 10 2.5M17.5 10H2.5M10 17.5C5.858 17.5 2.5 14.142 2.5 10M10 17.5c1.381 0 2.5-3.358 2.5-7.5S11.381 2.5 10 2.5M10 17.5c-1.381 0-2.5-3.358-2.5-7.5S8.619 2.5 10 2.5M2.5 10C2.5 5.858 5.858 2.5 10 2.5"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <select id="lang-switch" class="lang-switch" aria-label="Language" data-no-i18n>
+        <option value="en">English</option>
+        <option value="hi">हिन्दी</option>
+        <option value="mr">मराठी</option>
+        <option value="kn">ಕನ್ನಡ</option>
+        <option value="gu">ગુજરાતી</option>
+        <option value="ta">தமிழ்</option>
+        <option value="bn">বাংলা</option>
+      </select>
+    </div>
+
+    <div class="site-header__account">
+      {% if session.get('role') %}
+        <span class="nav-actor">
+          <span class="nav-actor__role">{{ session.get('job_title') or (session.get('role') | replace('_',' ') | title) }}</span>
+          {{ session.get('actor_name', '') }}
+        </span>
+        <a href="{{ url_for('auth.account') }}" class="nav-link-switch">Account</a>
+        <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="nav-link-switch" style="background:none;border:none;cursor:pointer;font:inherit;">Log out</button>
+        </form>
+      {% else %}
+        <a href="{{ url_for('auth.signin') }}" class="nav-link-switch">Sign in</a>
+        <a href="{{ url_for('auth.signup') }}" class="nav-link-switch">Sign up</a>
+      {% endif %}
+    </div>
+  </div>
 </header>
 
 <main class="site-main">
   {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="flash flash--{{ category }}">{{ message }}</div>
-    {% endfor %}
+    {% if messages %}
+      <div class="flash-stack">
+        {% for category, message in messages %}
+          <div class="flash flash--{{ category }}">
+            <svg width="16" height="16" aria-hidden="true"><use href="#icon-check"/></svg>
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   {% endwith %}
 
   {% block content %}{% endblock %}
 </main>
 
-<footer class="site-footer">
-  <small>Demo data — for illustration purposes only</small>
-</footer>
+{% if request.endpoint in ('role_select', 'login_page') %}
+  {# These two pages build their own dark footer via page-scoped CSS/JS
+     that targets this exact <small> element — left untouched. #}
+  <footer class="site-footer">
+    <small>Demo data — for illustration purposes only · NEVO</small>
+  </footer>
+{% else %}
+  {# Every other page — previously just a bare one-line disclaimer, unlike
+     the rich dark footer (logo, copyright, legal links) role_select.html/
+     login.html already have. Brings the rest of the site in line with it. #}
+  <footer class="site-footer site-footer--rich">
+    <div class="site-footer__inner">
+      <a href="{{ url_for('role_select') }}" class="site-footer__brand">
+        <img src="{{ url_for('static', filename='img/nevo-logo.png') }}" alt="" width="36" height="36">
+        <span>© 2026 NEVO. Empowering civic resolution.</span>
+      </a>
+      <nav class="site-footer__links" aria-label="Legal">
+        <a href="{{ url_for('role_select') }}">Privacy Policy</a>
+        <a href="{{ url_for('role_select') }}">Terms of Service</a>
+        <a href="{{ url_for('role_select') }}">Contact</a>
+      </nav>
+    </div>
+    <p class="site-footer__note">Demo data — for illustration purposes only</p>
+  </footer>
+{% endif %}
 
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

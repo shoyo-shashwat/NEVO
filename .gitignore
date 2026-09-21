@@ -24,6 +24,9 @@ env/
 # Flask / Alembic — generated, not hand-edited
 instance/
 
+# Citizen-uploaded evidence photos — runtime data, not source (Finding 6)
+app/static/uploads/
+
 # OS
 .DS_Store
 Thumbs.db

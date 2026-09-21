@@ -8,10 +8,22 @@
 #   - originalRawInput + originalLanguage are the single, permanent raw-input
 #     field pair — captured once on creation, never overwritten. No duplicate
 #     rawTextOriginalLanguage / detectedLanguage fields (§13.1 consolidation).
-#   - Contribution owns all five fields: report_id, citizen_id,
-#     demand_cluster_id, type, timestamp (§5.2.1).
+#
+# IDENTITY FIELDS — reconciled with pre-existing DB schema (see
+# app/models/auth_models.py provenance note): Report/Contribution/
+# Verification no longer key identity off a loose `citizen_id` string.
+# Instead, exactly one of these is set:
+#   citizen_account_id — a real, logged-in CitizenAccount
+#   anonymous_token     — a per-browser random token (see app/citizen/routes.py
+#                         ::_current_identity) so an anonymous citizen can
+#                         still track their own report/contribution across
+#                         visits without an account
+# complaint_id / consent_given_at on Report and the extended status enum
+# (Submitted/Processing/Verified/.../Closed, layered on top of the original
+# Draft/Unclustered/Clustered gate) were likewise already present in the DB.
 
 import uuid
+import secrets
 from datetime import datetime, timezone
 
 from app.extensions import db
@@ -19,6 +31,13 @@ from app.extensions import db
 
 def _uuid():
     return str(uuid.uuid4())
+
+
+def _generate_complaint_id() -> str:
+    """Human-shareable reference id, e.g. NEVO-7F3K9A2C. Uniqueness is
+    enforced by the DB unique constraint; callers retry on IntegrityError
+    in the rare case of a collision."""
+    return "NEVO-" + secrets.token_hex(4).upper()
 
 
 # ---------------------------------------------------------------------------
@@ -44,11 +63,26 @@ class Report(db.Model):
     channel: how the input arrived — text | voice | messaging
     """
     __tablename__ = "reports"
+    __table_args__ = (
+        db.UniqueConstraint("complaint_id", name="uq_reports_complaint_id"),
+    )
 
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
 
-    # Identity & scope
-    citizen_id = db.Column(db.String(36), nullable=False, index=True)
+    # Human-shareable reference id — "Citizens should be able to track their
+    # report" (unique, generated at creation, never reused).
+    complaint_id = db.Column(db.String(40), nullable=False, index=True, default=_generate_complaint_id)
+
+    # Identity — exactly one of these is set. See module docstring.
+    citizen_account_id = db.Column(
+        db.String(36), db.ForeignKey("citizen_accounts.id"), nullable=True, index=True
+    )
+    anonymous_token = db.Column(db.String(64), nullable=True, index=True)
+
+    # Consent captured at submission time (in addition to the account-level
+    # consent on CitizenAccount, which an anonymous submitter doesn't have).
+    consent_given_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
     country_id = db.Column(
         db.String(36), db.ForeignKey("countries.id"), nullable=False
     )
@@ -71,6 +105,15 @@ class Report(db.Model):
     original_raw_input = db.Column(db.Text, nullable=False)
     original_language = db.Column(db.String(10), nullable=True)   # ISO 639-1, set on first extract
 
+    # The "common format" structured representation (Multilingual
+    # Architecture requirement): always English, regardless of
+    # original_language, so a government reviewer who doesn't read the
+    # citizen's language still has a usable description. Produced by
+    # groq_client.extract_report_fields() alongside (never instead of)
+    # problem_summary in the original language — this column holds only
+    # the English one; original_raw_input is never translated or touched.
+    problem_summary_en = db.Column(db.Text, nullable=True)
+
     # Channel
     channel = db.Column(
         db.Enum("text", "voice", "messaging", name="report_channel_enum"),
@@ -86,9 +129,19 @@ class Report(db.Model):
     duration = db.Column(db.String(200), nullable=True)     # free-form: "3 months", "ongoing"
     affected_group = db.Column(db.String(200), nullable=True)
 
-    # Lifecycle status (§13.1 — no separate Draft table)
+    # Lifecycle status (§13.1 — no separate Draft table).
+    # Draft/Unclustered/Clustered are the original AI-extraction gate values;
+    # the rest extend the enum to the full public lifecycle
+    # (Submitted -> Processing -> Verified -> Clustered -> UnderReview ->
+    # Actioned -> Resolved -> Closed). Not every report passes through every
+    # stage — see the roadmap's report-lifecycle section.
     status = db.Column(
-        db.Enum("Draft", "Unclustered", "Clustered", name="report_status_enum"),
+        db.Enum(
+            "Draft", "Unclustered", "Clustered",
+            "Submitted", "Processing", "Verified", "UnderReview",
+            "Actioned", "Resolved", "Closed",
+            name="report_status_enum",
+        ),
         nullable=False,
         default="Draft",
     )
@@ -107,6 +160,7 @@ class Report(db.Model):
     country = db.relationship("Country", foreign_keys=[country_id])
     region = db.relationship("AdministrativeRegion", foreign_keys=[region_id])
     category = db.relationship("Category", foreign_keys=[category_id])
+    citizen_account = db.relationship("CitizenAccount", foreign_keys=[citizen_account_id])
     contributions = db.relationship("Contribution", back_populates="report",
                                      lazy="dynamic", cascade="all, delete-orphan")
     evidence = db.relationship("Evidence", back_populates="report",
@@ -126,12 +180,12 @@ class Contribution(db.Model):
     """
     Links a Report to a DemandCluster.
 
-    All five fields from §5.2.1:
-      report_id, citizen_id, demand_cluster_id, type, timestamp
-
     Created only via DemandCluster methods — never directly — so that
     DemandCluster can maintain its derived counts (totalReports,
     uniqueContributors) without risk of drift.
+
+    Identity — exactly one of citizen_account_id / anonymous_token is set,
+    same convention as Report (see module docstring).
 
     type values:
       joined         — citizen chose to join an existing cluster
@@ -142,11 +196,13 @@ class Contribution(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
 
-    # All five §5.2.1 fields
     report_id = db.Column(
         db.String(36), db.ForeignKey("reports.id"), nullable=False, index=True
     )
-    citizen_id = db.Column(db.String(36), nullable=False, index=True)
+    citizen_account_id = db.Column(
+        db.String(36), db.ForeignKey("citizen_accounts.id"), nullable=True, index=True
+    )
+    anonymous_token = db.Column(db.String(64), nullable=True, index=True)
     demand_cluster_id = db.Column(
         db.String(36), db.ForeignKey("demand_clusters.id"), nullable=False, index=True
     )
@@ -162,6 +218,16 @@ class Contribution(db.Model):
     # Relationships
     report = db.relationship("Report", back_populates="contributions")
     demand_cluster = db.relationship("DemandCluster", back_populates="contributions")
+    citizen_account = db.relationship("CitizenAccount", foreign_keys=[citizen_account_id])
+
+    @property
+    def identity_key(self) -> str:
+        """A single comparable value for 'is this the same person' — used
+        for unique_contributors counting. Prefixed so an account id and an
+        anonymous token can never collide."""
+        if self.citizen_account_id:
+            return f"acct:{self.citizen_account_id}"
+        return f"anon:{self.anonymous_token}"
 
     def __repr__(self):
         return (
@@ -189,7 +255,10 @@ class Verification(db.Model):
     __tablename__ = "verifications"
 
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
-    citizen_id = db.Column(db.String(36), nullable=False, index=True)
+    citizen_account_id = db.Column(
+        db.String(36), db.ForeignKey("citizen_accounts.id"), nullable=True, index=True
+    )
+    anonymous_token = db.Column(db.String(64), nullable=True, index=True)
     demand_cluster_id = db.Column(
         db.String(36), db.ForeignKey("demand_clusters.id"), nullable=False, index=True
     )
@@ -207,11 +276,11 @@ class Verification(db.Model):
 
     # Relationship
     demand_cluster = db.relationship("DemandCluster", back_populates="verifications")
+    citizen_account = db.relationship("CitizenAccount", foreign_keys=[citizen_account_id])
 
     def __repr__(self):
         return (
-            f"<Verification citizen={self.citizen_id} "
-            f"cluster={self.demand_cluster_id} state={self.state}>"
+            f"<Verification cluster={self.demand_cluster_id} state={self.state}>"
         )
 
 

@@ -12,10 +12,62 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: qwen/qwen3.6-27b
+        value: qwen/qwen3.8-27b
       - key: COHERE_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: FLASK_APP
         value: wsgi:app
+      # Optional — email delivery (password reset, government account
+      # provisioning). If unset, emails aren't sent; the triggering flow
+      # falls back to showing the link/credentials directly. See
+      # app/services/email_client.py.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_ADDRESS
+        sync: false
+      - key: SMTP_USE_TLS
+        value: "true"
+
+  # Background job worker — processes app/services/job_queue.py-enqueued
+  # jobs (email delivery, cluster-embedding retries). Same codebase/image
+  # as the web service, different start command, no separate credentials.
+  - type: worker
+    name: brics-people-first-worker
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: qwen/qwen3.8-27b
+      - key: COHERE_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: FLASK_APP
+        value: wsgi:app
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_ADDRESS
+        sync: false
+      - key: SMTP_USE_TLS
+        value: "true"

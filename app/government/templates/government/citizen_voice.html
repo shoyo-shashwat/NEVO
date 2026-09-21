@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Citizen Voice — NEVO{% endblock %}
+
+{% block content %}
+<div class="citizen-voice-page">
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <h1 class="page-title">Citizen voice</h1>
+      <p class="page-hint" style="margin-top: 0;">
+        {% if role == 'mp' and region_note %}
+What people in {{ region_note }} are saying, most recent first.
+        {% else %}
+What citizens are saying, most recent first.
+        {% endif %}
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-voice-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  {% if emerging_themes %}
+    <p class="voice-themes">
+      <strong>Rising this month:</strong>
+      {% for theme in emerging_themes %}
+        <span class="voice-themes__chip">{{ theme.category_name }} +{{ theme.recent_count - theme.prior_count }}</span>
+      {% endfor %}
+    </p>
+  {% endif %}
+
+  {% if not report_cards %}
+    <p class="empty-state">No citizen reports with a processed summary yet.</p>
+  {% endif %}
+
+  <div class="citizen-voice-list" id="voice-tiles">
+    {% for item in report_cards %}
+      <div class="citizen-voice-card" {% if loop.index > 6 %}hidden{% endif %}>
+        <div class="citizen-voice-card__head">
+          <span class="citizen-voice-card__quote-icon">&ldquo;</span>
+          <span class="cluster-card__category">{{ item.category_name }}</span>
+          <span class="citizen-voice-card__date">{{ item.report.created_at.strftime('%d %b %Y') }}</span>
+        </div>
+        <p class="citizen-voice-card__quote">&ldquo;{{ item.report.problem_summary_en }}&rdquo;</p>
+        {% if item.report.original_language and item.report.original_language != 'en' %}
+          <span class="evidence-sentiment__official">(translated from {{ item.report.original_language | upper }})</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+  {% if report_cards | length > 6 %}
+    <p class="voice-loadmore"><button type="button" class="btn btn--secondary" id="voice-more">Load more</button></p>
+    <script>
+      (function () {
+        var btn = document.getElementById('voice-more');
+        btn.addEventListener('click', function () {
+          var hidden = document.querySelectorAll('#voice-tiles [hidden]');
+          for (var i = 0; i < 6 && i < hidden.length; i++) hidden[i].hidden = false;
+          if (document.querySelectorAll('#voice-tiles [hidden]').length === 0) btn.parentNode.remove();
+        });
+      })();
+    </script>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,21 +1,180 @@
 {% extends "base.html" %}
-{% block title %}Home — BRICS People First{% endblock %}
+{% block title %}Home — Nevo{% endblock %}
 
 {% block content %}
-<div class="home">
-  <h1 class="home__heading">Tell us what your community needs</h1>
-  <p class="home__sub">Your voice shapes local development priorities.</p>
+{% set first_name = (session.get('actor_name') or '').split(' ')[0] %}
+<div class="home-page">
+  <span class="home-greeting__eyebrow">{% if first_name %}Good to see you{% else %}Home{% endif %}</span>
+  <h1 class="home-greeting__title">
+    {% if first_name %}Welcome back, <em>{{ first_name }}</em>{% else %}A stronger community starts with people like you{% endif %}
+  </h1>
+  <p class="home-greeting__sub">Report issues, support local demands, and see real progress take shape in your area.</p>
 
-  <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary btn--large">
-    Report a problem
-  </a>
+  <section class="home-hero">
+    <div class="home-hero__body">
+      <span class="home-hero__eyebrow">
+        <svg width="14" height="14"><use href="#icon-signal"/></svg>
+        Your area
+      </span>
+      <h2 class="home-hero__title">Your voice is making a difference</h2>
+      <p class="home-hero__desc">See what's happening in your community and help shape what comes next.</p>
+      <div class="home-hero__stats">
+        <div class="home-hero__stat-card">
+          <span class="home-hero__stat-icon home-hero__stat-icon--citizen"><svg width="16" height="16"><use href="#icon-clipboard-check"/></svg></span>
+          <span class="home-hero__stat-value">{{ snapshot.active_demands }}</span>
+          <span class="home-hero__stat-label">Community demands</span>
+          <span class="home-hero__stat-caption">People in your area</span>
+        </div>
+        <div class="home-hero__stat-card">
+          <span class="home-hero__stat-icon home-hero__stat-icon--info"><svg width="16" height="16"><use href="#icon-people"/></svg></span>
+          <span class="home-hero__stat-value">{{ snapshot.participants }}</span>
+          <span class="home-hero__stat-label">Citizens participating</span>
+          <span class="home-hero__stat-caption">Active this week</span>
+        </div>
+        <div class="home-hero__stat-card">
+          <span class="home-hero__stat-icon home-hero__stat-icon--success"><svg width="16" height="16"><use href="#icon-building"/></svg></span>
+          <span class="home-hero__stat-value">{{ snapshot.projects_tracked }}</span>
+          <span class="home-hero__stat-label">Project{{ 's' if snapshot.projects_tracked != 1 else '' }} tracked</span>
+          <span class="home-hero__stat-caption">Real change happens</span>
+        </div>
+        <div class="home-hero__stat-card">
+          <span class="home-hero__stat-icon home-hero__stat-icon--citizen"><svg width="16" height="16"><use href="#icon-chart"/></svg></span>
+          <span class="home-hero__stat-value">{{ snapshot.projects_completed }}</span>
+          <span class="home-hero__stat-label">Resolved</span>
+          <span class="home-hero__stat-caption">You're making a difference</span>
+        </div>
+      </div>
+      <div class="home-hero__cta-row">
+        <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary">
+          <svg width="18" height="18"><use href="#icon-megaphone"/></svg>
+          Report a need
+        </a>
+        <a href="{{ url_for('citizen.community') }}" class="btn btn--secondary">
+          <svg width="18" height="18"><use href="#icon-people"/></svg>
+          Explore community
+        </a>
+      </div>
+    </div>
+    <div class="home-hero__art" style="background-image: url('{{ url_for('static', filename='img/hero-civic.png') }}')"></div>
+  </section>
 
-  <div class="home__links">
-    <a href="{{ url_for('citizen.community') }}">See community issues</a>
-    <a href="{{ url_for('citizen.demand_map') }}">View map</a>
-    {% if session.get('role') == 'citizen' %}
-      <a href="{{ url_for('citizen.my_timeline') }}">My timeline</a>
-    {% endif %}
+  <nav class="home-quicklinks">
+    <div class="home-quicklinks__item home-quicklinks__item--label">
+      <svg width="18" height="18"><use href="#icon-signal"/></svg>
+      <span>
+        <strong>Take a quick look</strong>
+        <small>Shortcuts to what matters most</small>
+      </span>
+    </div>
+    <a href="{{ url_for('citizen.report_flow') }}" class="home-quicklinks__item">
+      <svg width="18" height="18"><use href="#icon-clipboard-check"/></svg>
+      <span>
+        <strong>Report a need</strong>
+        <small>Tell us what's wrong</small>
+      </span>
+    </a>
+    <a href="{{ url_for('citizen.community') }}" class="home-quicklinks__item">
+      <svg width="18" height="18"><use href="#icon-people"/></svg>
+      <span>
+        <strong>Explore demands</strong>
+        <small>See what others are raising</small>
+      </span>
+    </a>
+    <a href="{{ url_for('citizen.demand_map') }}" class="home-quicklinks__item">
+      <svg width="18" height="18"><use href="#icon-map"/></svg>
+      <span>
+        <strong>View on map</strong>
+        <small>Check issues near you</small>
+      </span>
+    </a>
+    <a href="{{ url_for('citizen.impact') }}" class="home-quicklinks__item">
+      <svg width="18" height="18"><use href="#icon-chart"/></svg>
+      <span>
+        <strong>See your impact</strong>
+        <small>Track your progress</small>
+      </span>
+    </a>
+  </nav>
+
+  <div class="home-body-grid">
+    <div>
+      {% if top_demand_cards %}
+        <section class="home-demands-section">
+          <div class="home-section__head">
+            <h2 class="home-section__title">Top community demands near you</h2>
+            <a href="{{ url_for('citizen.community') }}" class="home-section__link">View all demands →</a>
+          </div>
+          <div class="home-demands">
+            {% for item in top_demand_cards[:3] %}
+              <a href="{{ url_for('citizen.community') }}" class="home-demand-card--featured">
+                <div class="home-demand-card--featured__visual home-demand-card--featured__visual--icon">
+                  <svg width="30" height="30"><use href="#icon-signal"/></svg>
+                </div>
+                <div class="home-demand-card--featured__body">
+                  {% if item.trend == 'increasing' %}
+                    <span class="status status--increasing">↑ Increasing</span>
+                  {% elif item.active_status == 'UnderGovernmentReview' %}
+                    <span class="status status--review">Under review</span>
+                  {% else %}
+                    <span class="status status--active">Active</span>
+                  {% endif %}
+                  <h3>{{ item.category_name }}</h3>
+                  {% if item.locality %}<p class="home-demand-card__meta">{{ item.locality }}</p>{% endif %}
+                  <div class="home-demand-card__stats">
+                    <span>{{ item.unique_contributors }} people</span>
+                    <span>{{ item.total_reports }} reports</span>
+                  </div>
+                </div>
+              </a>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    </div>
+
+    <aside class="home-impact">
+      <div class="home-impact__head">
+        <span class="home-impact__trophy">🏆</span>
+        <div>
+          <span class="home-impact__title">Your impact</span>
+          <span class="home-impact__subtitle">You're helping build a better community.</span>
+        </div>
+      </div>
+      {% if personal %}
+        <a href="{{ url_for('citizen.impact') }}" class="home-impact__stat">
+          <svg width="16" height="16"><use href="#icon-check"/></svg>
+          <span class="home-impact__value">{{ personal.issues_resolved }}</span>
+          <span class="home-impact__label">Issue{{ 's' if personal.issues_resolved != 1 else '' }} resolved</span>
+          <svg width="14" height="14" class="home-impact__stat-arrow"><use href="#icon-arrow-right"/></svg>
+        </a>
+        <a href="{{ url_for('citizen.impact') }}" class="home-impact__stat">
+          <svg width="16" height="16"><use href="#icon-people"/></svg>
+          <span class="home-impact__value">{{ personal.demands_joined }}</span>
+          <span class="home-impact__label">Demands supported</span>
+          <svg width="14" height="14" class="home-impact__stat-arrow"><use href="#icon-arrow-right"/></svg>
+        </a>
+        <a href="{{ url_for('citizen.impact') }}" class="home-impact__stat">
+          <svg width="16" height="16"><use href="#icon-clipboard-check"/></svg>
+          <span class="home-impact__value">{{ personal.reports_submitted }}</span>
+          <span class="home-impact__label">Reports you raised</span>
+          <svg width="14" height="14" class="home-impact__stat-arrow"><use href="#icon-arrow-right"/></svg>
+        </a>
+      {% else %}
+        <p class="home-impact__label">Report or support a demand to start building your impact.</p>
+      {% endif %}
+      <a href="{{ url_for('citizen.impact') }}" class="btn btn--secondary btn--small">See full impact →</a>
+    </aside>
+  </div>
+
+  <div class="home-cta-banner">
+    <div>
+      <p class="home-cta-banner__title">A stronger community starts with you</p>
+      <p class="home-cta-banner__desc">Report issues, support local demands, see real change.</p>
+    </div>
+    <a href="{{ url_for('citizen.report_flow') }}" class="btn btn--primary">
+      <svg width="18" height="18"><use href="#icon-megaphone"/></svg>
+      Report a need
+    </a>
   </div>
 </div>
 {% endblock %}

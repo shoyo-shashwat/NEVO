@@ -1,44 +1,207 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — BRICS People First{% endblock %}
+{% block title %}Dashboard — NEVO{% endblock %}
 
 {% block content %}
 <div class="gov-dashboard">
-  <h1>What needs attention</h1>
-  <p class="dashboard__country">{{ country_code }}</p>
 
-  {# --- Top Priorities (increasing demand) --- #}
-  {% if top_cards %}
-  <section class="dashboard-section">
-    <h2 class="dashboard-section__title">Top priorities</h2>
-    {% for card in top_cards %}
-      {% include "government/_cluster_card.html" %}
-    {% endfor %}
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <span class="gov-dashboard__role-badge">
+        <svg width="13" height="13"><use href="#icon-shield"/></svg> MP priority queue
+      </span>
+      <h1>What needs your decision</h1>
+      <p class="dashboard__country">
+        <svg width="15" height="15"><use href="#icon-building"/></svg>
+        {{ region_note or country_code }} · most urgent first
+      </p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-mp-dashboard-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  {# --- Quick-glance stat strip — Round 4 "dashboard is very empty" fix --- #}
+  <div class="dashboard-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-signal"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.active_signals }}</span>
+      <span class="dashboard-stat__label">Active demands</span>
+      <span class="dashboard-stat__sub">New citizen reports</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+    <div class="dashboard-stat dashboard-stat--critical">
+      <span class="dashboard-stat__icon dashboard-stat__icon--danger"><svg width="18" height="18"><use href="#icon-alert-triangle"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.critical_count }}</span>
+      <span class="dashboard-stat__label">Critical</span>
+      <span class="dashboard-stat__sub">Needs urgent review</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-clock"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.awaiting_decision }}</span>
+      <span class="dashboard-stat__label">Awaiting decision</span>
+      <span class="dashboard-stat__sub">No action recorded yet</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+  </div>
+
+  {# ---- MPLADS fund for this seat: as reported by its source; an MP recommends, the district sanctions ---- #}
+  <section class="fund" aria-label="MPLADS fund">
+    {% if ledger %}
+      <div class="fund__main">
+        <div class="fund__headline">
+          {% if ledger.awaiting_sanction is not none %}
+            <span class="fund__amount">{{ ledger.awaiting_sanction | rupees }}</span>
+            <span class="fund__caption">recommended by you, awaiting district sanction</span>
+          {% else %}
+            <span class="fund__amount">{{ ledger.recommended | rupees }}</span>
+            <span class="fund__caption">recommended by you so far</span>
+          {% endif %}
+          {% if ledger.days_to_term_end %}<span class="fund__caption">about {{ "{:,}".format(ledger.days_to_term_end) }} days until this term is scheduled to end</span>{% endif %}
+        </div>
+        <dl class="fund__figures">
+          <div><dt>Entitlement so far</dt><dd>{{ ledger.allocated | rupees }}</dd></div>
+          <div><dt>Recommended</dt><dd>{{ ledger.recommended | rupees }}{% if ledger.works_recommended %} · {{ ledger.works_recommended }} works{% endif %}</dd></div>
+          <div><dt>Sanctioned</dt><dd>{{ ledger.sanctioned | rupees }}{% if ledger.works_sanctioned %} · {{ ledger.works_sanctioned }} works{% endif %}</dd></div>
+          <div><dt>Spent</dt><dd>{{ ledger.spent | rupees }}{% if ledger.works_completed %} · {{ ledger.works_completed }} completed{% endif %}</dd></div>
+        </dl>
+        {% if fundable_gaps %}
+          <p class="fund__link">{{ fundable_gaps }} unfunded {{ 'demand' if fundable_gaps == 1 else 'demands' }} you can recommend works for.</p>
+        {% endif %}
+      </div>
+      <details class="fund__source">
+        <summary>Source</summary>
+        <p>{{ ledger.seat_label }} · {{ ledger.period_label }}<br>
+          <a href="{{ ledger.source_url }}" target="_blank" rel="noopener">{{ ledger.source }}</a>
+          · read {% if ledger.read_on %}{{ ledger.read_on.strftime('%d %b %Y') }}{% endif %}
+          {% if ledger.notes %}<br>{{ ledger.notes }}{% endif %}</p>
+      </details>
+    {% else %}
+      <p class="fund__empty"><strong>No MPLADS fund figures loaded for your seat yet.</strong>
+        {% if fundable_gaps %}Meanwhile, {{ fundable_gaps }} unfunded {{ 'demand' if fundable_gaps == 1 else 'demands' }} could have works recommended.{% endif %}</p>
+    {% endif %}
   </section>
+
+  {% if week %}
+    <p class="week">This week: <strong>{{ week.total }} new report{{ 's' if week.total != 1 }}</strong>{% if week.top_name %}, most about {{ week.top_name }} ({{ week.top_n }}){% endif %}.</p>
   {% endif %}
 
-  {# --- Decisions Awaiting Review --- #}
-  {% if pending_cards %}
-  <section class="dashboard-section">
-    <h2 class="dashboard-section__title">Awaiting your decision</h2>
-    {% for card in pending_cards %}
-      {% include "government/_cluster_card.html" %}
+  {# Context, not action: collapsed so the queue is the first thing an MP sees. #}
+  {% if mplads %}
+  <details class="dashboard-context">
+    <summary>State MPLADS figures <span>for context</span></summary>
+    <p class="dashboard-section__hint">Public MPLADS figures for {{ mplads.lok_sabha_term }}. NEVO does not allocate or disburse MPLADS funds; an MP recommends works and the district authority sanctions them.</p>
+    <div class="alignment-breakdown__chips">
+      <span class="alignment-chip">{{ mplads.mp_count }} MPs in state</span>
+      <span class="alignment-chip">₹{{ "%.1f"|format(mplads.total_allocated / 10000000) }} Cr allocated</span>
+      <span class="alignment-chip">₹{{ "%.1f"|format(mplads.total_expenditure / 10000000) }} Cr spent ({{ mplads.fund_utilization_pct }}% utilized)</span>
+      <span class="alignment-chip">{{ mplads.works_completed }} of {{ mplads.works_recommended }} recommended works completed</span>
+    </div>
+    <p class="alignment-breakdown__note">
+      Source: <a href="{{ mplads.source_url }}" target="_blank" rel="noopener">{{ mplads.source }}</a>
+      · as of {{ mplads.source_last_updated.strftime('%d %b %Y') if mplads.source_last_updated else 'unknown' }}
+    </p>
+  </details>
+  {% endif %}
+
+  <form method="GET" class="di-filters" aria-label="Filter demands">
+    <div class="di-filters__field">
+      <label for="f-sector">Sector</label>
+      <select name="sector" id="f-sector" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">All sectors</option>
+        {% for cat in categories %}<option value="{{ cat.id }}" {% if sector_filter == cat.id %}selected{% endif %}>{{ cat.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="di-filters__field">
+      <label for="f-align">Coverage</label>
+      <select name="alignment" id="f-align" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">Any</option>
+        {% for state in ['UNADDRESSED', 'PARTIALLY_ADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP', 'ALIGNED'] %}
+          <option value="{{ state }}" {% if alignment_filter == state %}selected{% endif %}>{{ state | state_label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="di-filters__field">
+      <label for="f-status">Status</label>
+      <select name="status" id="f-status" class="di-filters__select" onchange="this.form.submit()">
+        <option value="">Active + under review</option>
+        {% for st in ['Active', 'UnderGovernmentReview', 'Deferred', 'ActionTaken', 'Resolved'] %}
+          <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st | replace('UnderGovernmentReview', 'Under review') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if filtered_cards is not none %}<a href="{{ url_for('government.dashboard') }}" class="di-filters__clear">Clear filters</a>{% endif %}
+  </form>
+
+  {% if filtered_cards is not none %}
+    <p class="di-count">{{ filtered_cards | length }} result{{ 's' if filtered_cards | length != 1 }}</p>
+    {% for card in filtered_cards %}{% include "government/_cluster_card.html" %}{% else %}
+      <p class="empty-state">No demands match these filters.</p>
     {% endfor %}
-  </section>
-  {% endif %}
-
-  {# --- Other Active Issues --- #}
-  {% if other_cards %}
-  <section class="dashboard-section">
-    <h2 class="dashboard-section__title">Other active issues</h2>
-    {% for card in other_cards %}
-      {% include "government/_cluster_card.html" %}
+  {% else %}
+  {% set tabs = [
+    ('need', 'Needs decision', needs_cards | length),
+    ('emerging', 'Rising', emerging_cards | length),
+    ('gaps', 'Funding gaps', investment_gap_cards | length),
+    ('projects', 'In progress', in_progress_projects | length),
+    ('results', 'Did it work?', results | length),
+  ] %}
+  <section class="queue" aria-label="Your queue">
+    {% for key, label, n in tabs %}
+      <input type="radio" name="queue" id="q-{{ key }}" class="queue__radio" {% if loop.first %}checked{% endif %}>
     {% endfor %}
+    <div class="queue__tabs" role="group" aria-label="Queue sections">
+      {% for key, label, n in tabs %}
+        <label for="q-{{ key }}" class="queue__tab">{{ label }} <span class="queue__count">{{ n }}</span></label>
+      {% endfor %}
+    </div>
+
+    <div class="queue__panel" id="p-need">
+      <p class="dashboard-section__hint">Highest priority first, plus anything opened but not yet decided. Start at the top.</p>
+      {% for card in needs_cards %}{% include "government/_cluster_card.html" %}{% else %}
+        <p class="empty-state empty-state--small">Nothing is waiting on you. New citizen reports appear here once enough people report the same problem.</p>
+      {% endfor %}
+    </div>
+    <div class="queue__panel" id="p-emerging">
+      <p class="dashboard-section__hint">Demand rising faster than coverage. Worth acting on before it becomes critical.</p>
+      {% for card in emerging_cards %}{% include "government/_cluster_card.html" %}{% else %}
+        <p class="empty-state empty-state--small">No emerging gaps right now.</p>
+      {% endfor %}
+    </div>
+    <div class="queue__panel" id="p-gaps">
+      <p class="dashboard-section__hint">Little or no matching investment on record. Candidates for a project or an MPLADS recommendation.</p>
+      {% for card in investment_gap_cards %}{% include "government/_cluster_card.html" %}{% else %}
+        <p class="empty-state empty-state--small">No unfunded demand right now.</p>
+      {% endfor %}
+    </div>
+    <div class="queue__panel" id="p-projects">
+      <p class="dashboard-section__hint">Projects you are tracking that are not finished yet.</p>
+      {% for p in in_progress_projects %}
+        <div class="mini-project-card">
+          <span class="mini-project-card__name">{{ p.name }}</span>
+          <span class="project-card__status project-card__status--{{ p.status | lower }}">{{ p.status }}</span>
+          <a href="{{ url_for('government.projects_outcomes') }}" class="mini-project-card__link">Open <svg width="12" height="12"><use href="#icon-arrow-right"/></svg></a>
+        </div>
+      {% else %}
+        <p class="empty-state empty-state--small">No projects yet. Propose one when you record a decision.</p>
+      {% endfor %}
+    </div>
+    <div class="queue__panel" id="p-results">
+      <p class="dashboard-section__hint">Finished projects, and what citizens who live there say now.</p>
+      {% for r in results %}
+        <div class="mini-project-card">
+          <span class="mini-project-card__name">{{ r.project.name }}</span>
+          {% if r.still_pct is not none %}
+            <span class="result-chip result-chip--{{ 'bad' if r.still_pct >= 50 else 'good' }}">{{ r.still_pct }}% still affected</span>
+          {% else %}
+            <span class="result-chip">No citizen follow-up yet</span>
+          {% endif %}
+          {% if r.cluster %}<a href="{{ url_for('government.decision_workspace', cluster_id=r.cluster.id) }}" class="mini-project-card__link">Open</a>{% endif %}
+        </div>
+      {% else %}
+        <p class="empty-state empty-state--small">No completed projects yet.</p>
+      {% endfor %}
+    </div>
   </section>
-  {% endif %}
 
-  {% if not top_cards and not pending_cards and not other_cards %}
-    <p class="empty-state">No active demand signals for your area yet.</p>
   {% endif %}
-
 </div>
 {% endblock %}

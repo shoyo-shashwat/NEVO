@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}National Overview — NEVO{% endblock %}
+
+{% block content %}
+<div class="gov-dashboard national-overview">
+
+  <div class="gov-dashboard__head gov-dashboard__head--mp">
+    <div>
+      <h1 class="page-title">Where are development gaps emerging?</h1>
+      <p class="page-hint" style="margin-top: 0;">A nationwide view of evidence-backed demand, infrastructure and investment signals — for a more equitable India.</p>
+    </div>
+    <div class="gov-dashboard__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-po-overview-hero.png') }}')" aria-hidden="true"></div>
+  </div>
+
+  <div class="dashboard-stats">
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-signal"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.active_clusters }}</span>
+      <span class="dashboard-stat__label">Active demands</span>
+      <span class="dashboard-stat__sub">Across India</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--warning"><svg width="18" height="18"><use href="#icon-chart"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.increasing }}</span>
+      <span class="dashboard-stat__label">Trending up</span>
+      <span class="dashboard-stat__sub">Increasing compared to previous period</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--success"><svg width="18" height="18"><use href="#icon-clipboard-check"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.decisions_recorded }}</span>
+      <span class="dashboard-stat__label">Decisions recorded</span>
+      <span class="dashboard-stat__sub">Across all regions</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+    <div class="dashboard-stat">
+      <span class="dashboard-stat__icon dashboard-stat__icon--info"><svg width="18" height="18"><use href="#icon-building"/></svg></span>
+      <span class="dashboard-stat__value">{{ stats.projects_completed }}/{{ stats.projects_total }}</span>
+      <span class="dashboard-stat__label">Projects completed</span>
+      <span class="dashboard-stat__sub">Nationwide progress</span>
+      <svg class="dashboard-stat__chevron" width="14" height="14" aria-hidden="true"><use href="#icon-arrow-right"/></svg>
+    </div>
+  </div>
+
+  <div class="evidence-grid evidence-grid--2">
+    {% if breakdown %}
+      <div class="alignment-breakdown">
+        <div class="alignment-breakdown__head">
+          <span class="alignment-breakdown__title">
+            <svg width="13" height="13"><use href="#icon-chart"/></svg>
+            Investment alignment — {{ breakdown.scope_label }}
+          </span>
+          {% if breakdown.total_population %}
+            <span class="alignment-breakdown__pop">{{ "{:,}".format(breakdown.total_population) }} people represented by identified demand</span>
+          {% endif %}
+        </div>
+        {% if breakdown.total_population %}
+          <div class="alignment-bar" title="{{ breakdown.methodology }}">
+            {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+              {% set pct = breakdown.by_state_pct.get(state, 0) %}
+              {% if pct > 0 %}<span class="alignment-bar__seg alignment-bar__seg--{{ state | lower }}" style="width: {{ pct }}%"></span>{% endif %}
+            {% endfor %}
+          </div>
+          <div class="alignment-breakdown__legend">
+            {% for state in ['ALIGNED', 'PARTIALLY_ADDRESSED', 'UNADDRESSED', 'IMPLEMENTATION_ACCESS_GAP', 'EMERGING_GAP'] %}
+              <a href="{{ url_for('government.demand_intelligence', alignment=state) }}" class="alignment-breakdown__legend-item">
+                <span class="alignment-breakdown__dot alignment-breakdown__dot--{{ state | lower }}"></span>
+                {{ state | state_label }} {{ breakdown.by_state_pct.get(state, 0) }}%
+              </a>
+            {% endfor %}
+          </div>
+          <a href="{{ url_for('government.investment_alignment_view') }}" class="btn btn--secondary btn--small" style="margin-top:0.75rem;">
+            Full investment alignment breakdown <svg width="12" height="12"><use href="#icon-arrow-right"/></svg>
+          </a>
+        {% else %}
+          <p class="alignment-breakdown__empty">No population data available yet.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <section class="evidence-section">
+      <h2><span class="evidence-section__icon"><svg width="14" height="14"><use href="#icon-chart"/></svg></span> National demand by sector</h2>
+      <p class="dashboard-section__hint" style="margin-bottom: 0.9rem;">Active demands by sector across India.</p>
+      {% if sector_distribution %}
+        <div class="sector-distribution">
+          {% set max_count = sector_distribution[0].count if sector_distribution else 1 %}
+          {% for sector in sector_distribution %}
+            <div class="sector-distribution__row">
+              <span class="sector-distribution__label">{{ sector.name }}</span>
+              <div class="sector-distribution__track">
+                <div class="sector-distribution__fill" style="width: {{ (sector.count / max_count * 100) if max_count else 0 }}%"></div>
+              </div>
+              <span class="sector-distribution__count">{{ sector.count }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="empty-state empty-state--small">No active demands yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if mplads_rows %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-building"/></svg> MPLADS fund utilization — by state</h2>
+    <p class="dashboard-section__hint">Real public MPLADS figures ({{ mplads_rows[0].summary.lok_sabha_term }}) across every state on the platform — context for where recommended works are (or aren't) converting into completed spend. NEVO does not allocate or disburse MPLADS funds; the scheme's MPs recommend works, and the district authority sanctions and implements them.</p>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>State</th>
+          <th>MPs</th>
+          <th>Allocated</th>
+          <th>Spent</th>
+          <th>Utilization</th>
+          <th>Works completed / recommended</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in mplads_rows %}
+          {% set m = row.summary %}
+          <tr>
+            <td>{{ row.state_name }}</td>
+            <td>{{ m.mp_count }}</td>
+            <td>₹{{ "%.1f"|format(m.total_allocated / 10000000) }} Cr</td>
+            <td>₹{{ "%.1f"|format(m.total_expenditure / 10000000) }} Cr</td>
+            <td>{{ m.fund_utilization_pct }}%</td>
+            <td>{{ m.works_completed }} / {{ m.works_recommended }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="alignment-breakdown__note">
+      Source:
+      <a href="{{ mplads_rows[0].summary.source_url }}" target="_blank" rel="noopener">{{ mplads_rows[0].summary.source }}</a>
+      · as of {{ mplads_rows[0].summary.source_last_updated.strftime('%d %b %Y') if mplads_rows[0].summary.source_last_updated else 'unknown' }}
+    </p>
+  </section>
+  {% endif %}
+
+  {% if needs_attention %}
+  <section class="dashboard-section">
+    <h2 class="dashboard-section__title"><svg width="14" height="14"><use href="#icon-alert-triangle"/></svg> Requires attention</h2>
+    <p class="dashboard-section__hint">Highest-priority evidence-backed demand across the country right now.</p>
+    {% for card in needs_attention %}
+      {% include "government/_cluster_card.html" %}
+    {% endfor %}
+    <a href="{{ url_for('government.demand_intelligence') }}" class="btn btn--secondary btn--small">See all demand intelligence <svg width="12" height="12"><use href="#icon-arrow-right"/></svg></a>
+  </section>
+  {% endif %}
+
+
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{
+  "region_code": "MH",
+  "seat_label": "Mumbai North West, Maharashtra (Ravindra Dattaram Waikar)",
+  "period_label": "18th Lok Sabha (2024-29), term to date",
+  "term_end": "2029-06-03",
+  "allocated": 147000000,
+  "recommended": 147000000,
+  "sanctioned": 98000000,
+  "spent": 53799122,
+  "works_recommended": 67,
+  "works_sanctioned": 46,
+  "works_completed": 0,
+  "source": "MPLADS eSAKSHI public dashboard (mplads.mospi.gov.in), official government portal",
+  "source_url": "https://mplads.mospi.gov.in/digigov/dashboard.html",
+  "read_on": "2026-09-21",
+  "method": "dashboard data service",
+  "notes": "Filter: 18th Lok Sabha > Maharashtra > Mumbai North West. The portal prints no as-of date. It shows 0 works completed while recording about 5.4 Cr of expenditure."
+}

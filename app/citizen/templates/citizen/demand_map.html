@@ -1,40 +1,158 @@
 {% extends "base.html" %}
-{% block title %}Community Demand Map — BRICS People First{% endblock %}
+{% block title %}Demand Map — Nevo{% endblock %}
 
 {% block head %}
-  {# Leaflet — lightweight, no framework, CDN #}
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  {# Leaflet — lightweight, no framework. Vendored locally under
+     static/vendor/leaflet/ rather than loaded from a CDN, so the map still
+     works on networks that block unpkg.com (map tiles themselves still need
+     internet — that's unavoidable for any real map). #}
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="demand-map-page">
-  <h1>Community demand map</h1>
+{# Category → marker icon, shared with the sidebar list below and with the
+   map JS (which mirrors this same code→icon mapping for the fetched pins). #}
+{% set CAT_ICONS = {
+  'water_sanitation': 'icon-cat-water',
+  'roads_transport': 'icon-cat-road',
+  'electricity_utilities': 'icon-cat-electricity',
+  'education_access': 'icon-cat-education',
+  'waste_environment': 'icon-cat-waste',
+  'healthcare_access': 'icon-cat-health',
+} %}
 
-  {# Category filter #}
-  <div class="filter-bar">
-    <button class="filter-btn filter-btn--active" data-cat="">All</button>
-    {% for cat in categories %}
-      <button class="filter-btn" data-cat="{{ cat.id }}">{{ cat.name }}</button>
-    {% endfor %}
+<div class="map-page">
+  <header class="page-header map-hero">
+    <div>
+      <span class="page-eyebrow">Map</span>
+      <h1 class="page-title">Community demand map</h1>
+      <p class="page-description">
+        Every pin is a collective demand cluster in {{ country_code }}, not an individual complaint —
+        filter by category, or click a pin for details.
+      </p>
+    </div>
+    <div class="map-hero__art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-map-hero.png') }}')"></div>
+  </header>
+
+  <div class="impact-kpis map-stats">
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--info"><svg width="16" height="16"><use href="#icon-signal"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-total">–</span>
+      <span class="impact-kpis__label">Active clusters</span>
+    </div>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--success"><svg width="16" height="16"><use href="#icon-map"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-categories">–</span>
+      <span class="impact-kpis__label">Categories active</span>
+    </div>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--citizen"><svg width="16" height="16"><use href="#icon-chart"/></svg></span>
+      <span class="impact-kpis__value" id="map-stat-increasing">–</span>
+      <span class="impact-kpis__label">Trending up</span>
+    </div>
   </div>
 
-  <div id="map" style="height: 500px; width: 100%;"></div>
+  <div class="map-layout">
+    <aside class="map-sidebar">
+      <div class="map-sidebar__head">
+        <h2 class="map-sidebar__title">Filter by category</h2>
+        <button type="button" id="map-reset-filters" class="map-sidebar__reset">Reset filters</button>
+      </div>
+      <ul class="map-category-list">
+        <li class="map-category-item map-category-item--active" data-cat="">
+          <span class="map-category-item__icon"><svg width="15" height="15"><use href="#icon-map"/></svg></span>
+          <span class="map-category-item__label">All issues</span>
+          <span class="map-category-item__count" data-count-for="">–</span>
+        </li>
+        {% for cat in categories %}
+          <li class="map-category-item" data-cat="{{ cat.id }}">
+            <span class="map-category-item__icon"><svg width="15" height="15"><use href="#{{ CAT_ICONS.get(cat.code, 'icon-cat-default') }}"/></svg></span>
+            <span class="map-category-item__label">{{ cat.name }}</span>
+            <span class="map-category-item__count" data-count-for="{{ cat.id }}">–</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </aside>
+
+    <div class="map-main">
+      <div id="map"></div>
+    </div>
+
+    <aside class="map-feed">
+      <div class="map-sidebar__head">
+        <h2 class="map-feed__title">Active near you</h2>
+        <a href="{{ url_for('citizen.community') }}" class="map-sidebar__reset">View as list →</a>
+      </div>
+      <ul class="map-feed-list" id="map-feed-list">
+        <li class="map-feed-empty">Loading…</li>
+      </ul>
+    </aside>
+  </div>
+
+  <a href="{{ url_for('citizen.report_flow') }}" class="map-fab" aria-label="Report a problem">
+    <svg width="20" height="20"><use href="#icon-megaphone"/></svg>
+  </a>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
 (function () {
-  var map = L.map('map').setView([20, 0], 2);
+  var mapView = {{ map_view | tojson }};
+  var map = L.map('map').setView(mapView.center, mapView.zoom);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors',
     maxZoom: 18,
   }).addTo(map);
 
+  // Category code -> icon symbol id, mirrors CAT_ICONS in the template above.
+  var CATEGORY_ICONS = {
+    water_sanitation: 'icon-cat-water',
+    roads_transport: 'icon-cat-road',
+    electricity_utilities: 'icon-cat-electricity',
+    education_access: 'icon-cat-education',
+    waste_environment: 'icon-cat-waste',
+    healthcare_access: 'icon-cat-health',
+  };
+
+  function iconFor(categoryCode) {
+    var symbolId = CATEGORY_ICONS[categoryCode] || 'icon-cat-default';
+    return L.divIcon({
+      className: 'map-pin map-pin--citizen',
+      html: '<span class="map-pin__inner"><svg width="15" height="15"><use href="#' + symbolId + '"></use></svg></span>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 28],
+      popupAnchor: [0, -26],
+    });
+  }
+
   var markers = L.layerGroup().addTo(map);
   var activeCategory = '';
+
+  function renderFeed(features) {
+    var feedList = document.getElementById('map-feed-list');
+    feedList.innerHTML = '';
+    if (!features.length) {
+      feedList.innerHTML = '<li class="map-feed-empty">No active issues in this category yet.</li>';
+      return;
+    }
+    features.slice(0, 10).forEach(function (f) {
+      var p = f.properties;
+      var symbolId = CATEGORY_ICONS[p.category_code] || 'icon-cat-default';
+      var li = document.createElement('li');
+      li.className = 'map-feed-item';
+      li.innerHTML =
+        '<span class="map-feed-item__icon"><svg width="14" height="14"><use href="#' + symbolId + '"></use></svg></span>' +
+        '<span class="map-feed-item__body">' +
+          '<strong>' + p.category + '</strong>' +
+          '<span>' + (p.localities.join(', ') || 'Location pending') + '</span>' +
+        '</span>' +
+        '<span class="map-feed-item__status">' + p.status.replace('UnderGovernmentReview', 'Under review') + '</span>';
+      feedList.appendChild(li);
+    });
+  }
 
   function loadData() {
     var url = '/citizen/map/data';
@@ -44,39 +162,71 @@
       .then(function (r) { return r.json(); })
       .then(function (geojson) {
         markers.clearLayers();
+
         L.geoJSON(geojson, {
           pointToLayer: function (feature, latlng) {
-            return L.circleMarker(latlng, {
-              radius: 10,
-              fillColor: '#e05c2b',
-              color: '#fff',
-              weight: 1,
-              fillOpacity: 0.85,
-            });
+            return L.marker(latlng, { icon: iconFor(feature.properties.category_code) });
           },
           onEachFeature: function (feature, layer) {
             var p = feature.properties;
             layer.bindPopup(
               '<strong>' + p.category + '</strong><br>' +
               p.localities.join(', ') + '<br>' +
-              '<em>' + p.status + '</em>'
+              '<em>' + p.status.replace('UnderGovernmentReview', 'Under review') + '</em>'
             );
           },
         }).addTo(markers);
+
+        renderFeed(geojson.features);
       });
   }
 
-  // Category filter buttons
-  document.querySelectorAll('.filter-btn[data-cat]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      document.querySelectorAll('.filter-btn[data-cat]').forEach(function (b) {
-        b.classList.remove('filter-btn--active');
+  // Category counts need the *unfiltered* full set, fetched once up front —
+  // independent of whichever filter is currently active on the map itself.
+  fetch('/citizen/map/data')
+    .then(function (r) { return r.json(); })
+    .then(function (geojson) {
+      var counts = {};
+      geojson.features.forEach(function (f) {
+        var name = f.properties.category;
+        counts[name] = (counts[name] || 0) + 1;
       });
-      btn.classList.add('filter-btn--active');
-      activeCategory = btn.dataset.cat;
+      document.querySelectorAll('.map-category-item[data-cat]').forEach(function (item) {
+        var label = item.querySelector('.map-category-item__label').textContent;
+        var countEl = item.querySelector('.map-category-item__count');
+        if (item.dataset.cat === '') {
+          countEl.textContent = geojson.features.length;
+        } else {
+          countEl.textContent = counts[label] || 0;
+        }
+      });
+
+      var totalEl = document.getElementById('map-stat-total');
+      var catEl = document.getElementById('map-stat-categories');
+      var upEl = document.getElementById('map-stat-increasing');
+      if (totalEl) totalEl.textContent = geojson.features.length;
+      if (catEl) catEl.textContent = Object.keys(counts).length;
+      if (upEl) upEl.textContent = geojson.features.filter(function (f) { return f.properties.trend === 'increasing'; }).length;
+    });
+
+  // Category filter — sidebar list instead of the old top button row.
+  document.querySelectorAll('.map-category-item').forEach(function (item) {
+    item.addEventListener('click', function () {
+      document.querySelectorAll('.map-category-item').forEach(function (b) {
+        b.classList.remove('map-category-item--active');
+      });
+      item.classList.add('map-category-item--active');
+      activeCategory = item.dataset.cat;
       loadData();
     });
   });
+
+  var resetBtn = document.getElementById('map-reset-filters');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function () {
+      document.querySelector('.map-category-item[data-cat=""]').click();
+    });
+  }
 
   loadData();
 }());

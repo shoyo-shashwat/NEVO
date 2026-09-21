@@ -13,3 +13,14 @@ from app.models.reference_data import (  # noqa: F401
     DemographicDataPoint,
     GovernmentInvestment,
 )
+from app.models.auth_models import (  # noqa: F401
+    CitizenAccount,
+    GovernmentAccount,
+    Department,
+    PasswordResetToken,
+    AccountSession,
+    AuditLog,
+)
+from app.models.ai_models import AIProcessingLog, BackgroundJob  # noqa: F401
+from app.models.whatsapp_models import WhatsAppMessageLog  # noqa: F401
+from app.models.mplads_models import MpladsStateSummary  # noqa: F401

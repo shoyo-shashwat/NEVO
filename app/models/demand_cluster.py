@@ -166,13 +166,22 @@ class DemandCluster(db.Model):
     @property
     def unique_contributors(self) -> int:
         """
-        Count of distinct citizen_id values across this cluster's Contributions.
-        COUNT(DISTINCT citizen_id) scoped to this cluster — the anti-manipulation
-        mechanism (§5.2.2): one citizen submitting 10 reports still counts as 1.
+        Count of distinct people across this cluster's Contributions — the
+        anti-manipulation mechanism (§5.2.2): one citizen submitting 10
+        reports still counts as 1. "Distinct person" means a distinct
+        citizen_account_id OR a distinct anonymous_token (never conflated —
+        see Contribution.identity_key); COALESCE + a discriminating prefix
+        does the counting in one query rather than pulling every row.
         """
+        from sqlalchemy import case
         from app.models.citizen_models import Contribution  # local import avoids circularity
+        identity = case(
+            (Contribution.citizen_account_id.isnot(None),
+             func.concat("acct:", Contribution.citizen_account_id)),
+            else_=func.concat("anon:", Contribution.anonymous_token),
+        )
         return (
-            db.session.query(func.count(func.distinct(Contribution.citizen_id)))
+            db.session.query(func.count(func.distinct(identity)))
             .filter(Contribution.demand_cluster_id == self.id)
             .scalar()
             or 0
@@ -197,11 +206,13 @@ class DemandCluster(db.Model):
             .all()
         )
         counts = {state: cnt for state, cnt in rows}
-        total = sum(counts.values()) or 1  # avoid division by zero
+        votes = sum(counts.values())
+        total = votes or 1  # avoid division by zero
         still_affected = counts.get("StillHappening", 0) + counts.get("Worse", 0)
         return {
             **counts,
             "total": total,
+            "votes": votes,   # real vote count: 0 means nobody has verified yet (total is floored at 1)
             "still_affected_pct": round(still_affected / total * 100),
         }
 

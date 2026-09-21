@@ -1,61 +1,113 @@
 {% extends "base.html" %}
-{% block title %}Report a problem — BRICS People First{% endblock %}
+{% block title %}Report a need — Nevo{% endblock %}
 
 {% block content %}
-<div class="report-flow">
+<div class="report-flow-page">
 
   {% if clarification %}
-    <div class="report-flow__clarification">
-      <p class="report-flow__ai-q">{{ clarification }}</p>
+    <div class="report-flow__clarification-banner">
+      <span class="report-flow__clarification-icon"><svg width="18" height="18"><use href="#icon-mic"/></svg></span>
+      <div>
+        <p class="report-flow__clarification-label">One more detail needed</p>
+        <p class="report-flow__ai-q">{{ clarification }}</p>
+      </div>
     </div>
   {% else %}
-    <h1 class="report-flow__heading">What's the problem?</h1>
-    <p class="report-flow__hint">Describe it in your own words — voice or text.</p>
+    <div class="report-flow__intro">
+      <span class="page-eyebrow">Step 1 of 4 · You report it</span>
+      <h1 class="report-flow__heading">What's the problem?</h1>
+      <p class="report-flow__hint">Describe it in your own words — voice or text, no government-style form to fill in.</p>
+    </div>
   {% endif %}
 
-  <form method="POST" action="{{ url_for('citizen.report_flow') }}"
-        enctype="multipart/form-data" id="report-form">
+  <div class="report-flow">
+    <form method="POST" action="{{ url_for('citizen.report_flow') }}"
+          enctype="multipart/form-data" id="report-form">
 
-    <input type="hidden" name="channel" id="channel-input" value="text">
-    <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
-    <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="channel" id="channel-input" value="text">
+      <input type="hidden" name="latitude" id="latitude-input" value="{{ latitude or '' }}">
+      <input type="hidden" name="longitude" id="longitude-input" value="{{ longitude or '' }}">
 
-    {# Main input — voice fills this via Web Speech API, text typed directly #}
-    <textarea
-      name="text_input"
-      id="text-input"
-      class="report-flow__textarea"
-      rows="4"
-      placeholder="e.g. There is no clean water in our area for the past two months…"
-      autofocus
-    >{{ partial_text or '' }}</textarea>
+      <div class="report-flow__card">
+        {# Main input — voice fills this via Web Speech API, text typed directly #}
+        <textarea
+          name="text_input"
+          id="text-input"
+          class="report-flow__textarea"
+          rows="4"
+          placeholder="e.g. There is no clean water in our area for the past two months…"
+          autofocus
+        >{{ partial_text or '' }}</textarea>
 
-    {# Voice button — uses Web Speech API to type into the textarea live #}
-    <div class="report-flow__voice">
-      <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
-        🎙 Speak
+        {# Voice button — uses Web Speech API to type into the textarea live #}
+        <div class="report-flow__voice">
+          <button type="button" id="mic-btn" class="btn btn--secondary" aria-label="Record voice">
+            <svg width="16" height="16"><use href="#icon-mic"/></svg>
+            Speak
+          </button>
+          <span id="mic-status" class="report-flow__mic-status"></span>
+        </div>
+      </div>
+
+      <div class="report-flow__fields">
+        {# Location hint — optional, gives AI a fallback if not mentioned in text #}
+        <div class="report-flow__field-card report-flow__location">
+          <label for="location-hint" class="report-flow__location-label">
+            <svg width="15" height="15" style="vertical-align:-2px;margin-right:3px;"><use href="#icon-pin"/></svg>
+            Which area or neighbourhood? <span class="report-flow__optional">(optional)</span>
+          </label>
+          <input
+            type="text"
+            name="location_hint"
+            id="location-hint"
+            class="report-flow__location-input"
+            placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
+            value="{{ location_hint or '' }}"
+          >
+          <p id="geo-status" class="report-flow__geo-status"></p>
+        </div>
+
+        {# Evidence photo — optional, Finding 6. Image-only for MVP. #}
+        <div class="report-flow__field-card report-flow__evidence">
+          <label for="evidence-photo" class="report-flow__evidence-label">
+            <svg width="15" height="15" style="vertical-align:-2px;margin-right:2px;"><use href="#icon-camera"/></svg>
+            Add a photo <span class="report-flow__optional">(optional)</span>
+          </label>
+          <input type="file" name="evidence_photo" id="evidence-photo" accept="image/*">
+          <p class="report-flow__field-hint">A photo makes it easier for officials to verify the issue.</p>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--large report-flow__submit">
+        <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+        Submit report
       </button>
-      <span id="mic-status" class="report-flow__mic-status"></span>
-    </div>
+    </form>
 
-    {# Location hint — optional, gives AI a fallback if not mentioned in text #}
-    <div class="report-flow__location">
-      <label for="location-hint" class="report-flow__location-label">
-        Which area or neighbourhood? <span class="report-flow__optional">(optional)</span>
-      </label>
-      <input
-        type="text"
-        name="location_hint"
-        id="location-hint"
-        class="report-flow__location-input"
-        placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
-        value="{{ location_hint or '' }}"
-      >
-      <p id="geo-status" class="report-flow__geo-status" style="font-size:0.8rem;color:var(--color-muted);margin-top:0.25rem;"></p>
-    </div>
-
-    <button type="submit" class="btn btn--primary">Submit</button>
-  </form>
+    <aside class="report-flow__sidebar-col">
+      <div class="report-flow__hero-art" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-report-hero.png') }}')"></div>
+      <div class="report-flow__sidebar">
+        <h2 class="report-flow__sidebar-title">What happens next</h2>
+        <ol class="report-flow__next-steps">
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-people"/></svg></span>
+            We check if others already reported the same problem nearby.
+          </li>
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-building"/></svg></span>
+            Once enough voices join, it becomes visible to government reviewers.
+          </li>
+          <li>
+            <span class="report-flow__next-icon"><svg width="15" height="15"><use href="#icon-check"/></svg></span>
+            You can follow the whole journey from your timeline, including the final outcome.
+          </li>
+        </ol>
+        <div class="report-flow__sidebar-illustration" style="background-image: url('{{ url_for('static', filename='img/nevo-civic-report-next.png') }}')" aria-hidden="true"></div>
+      </div>
+      <p class="report-flow__tagline">Your voice.<br>A stronger community.</p>
+    </aside>
+  </div>
 
 </div>
 {% endblock %}
@@ -128,10 +180,13 @@
     textInput.value = baseText + interim;
   };
 
+  var MIC_LABEL_IDLE = '<svg width="16" height="16"><use href="#icon-mic"></use></svg> Speak';
+  var MIC_LABEL_RECORDING = '⏹ Stop';
+
   recognition.onerror = function (e) {
     micStatus.textContent = 'Microphone error: ' + e.error;
     isRecording = false;
-    micBtn.textContent = '🎙 Speak';
+    micBtn.innerHTML = MIC_LABEL_IDLE;
   };
 
   recognition.onend = function () {
@@ -146,12 +201,12 @@
       baseText = textInput.value;   // preserve any text already typed
       recognition.start();
       isRecording = true;
-      micBtn.textContent = '⏹ Stop';
+      micBtn.innerHTML = MIC_LABEL_RECORDING;
       micStatus.textContent = 'Listening…';
     } else {
       recognition.stop();
       isRecording = false;
-      micBtn.textContent = '🎙 Speak';
+      micBtn.innerHTML = MIC_LABEL_IDLE;
       micStatus.textContent = 'Done — review and submit.';
     }
   });

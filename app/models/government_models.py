@@ -54,9 +54,21 @@ class GovernmentDecision(db.Model):
         db.String(36), db.ForeignKey("countries.id"), nullable=False
     )  # denormalized from cluster for query convenience (§5.4.2)
 
+    # decided_by_id: legacy plain-string identity, kept for back-compat.
+    # decided_by_account_id: real FK to the GovernmentAccount that decided
+    # this, added once real auth existed. New code should read this one;
+    # decided_by_id is set alongside it for now rather than removed.
     decided_by_id = db.Column(db.String(36), nullable=False)
+    decided_by_account_id = db.Column(
+        db.String(36), db.ForeignKey("government_accounts.id"), nullable=True
+    )
     decided_by_role = db.Column(
-        db.Enum("mp", "planning_officer", name="decision_actor_role_enum"),
+        db.Enum(
+            "mp", "planning_officer",
+            "national_admin", "state_admin", "district_officer",
+            "department_officer", "analyst", "reviewer",
+            name="decision_actor_role_enum",
+        ),
         nullable=False,
     )
 
@@ -87,6 +99,7 @@ class GovernmentDecision(db.Model):
     # Relationships
     demand_cluster = db.relationship("DemandCluster", foreign_keys=[demand_cluster_id])
     country = db.relationship("Country", foreign_keys=[country_id])
+    decided_by_account = db.relationship("GovernmentAccount", foreign_keys=[decided_by_account_id])
     linked_project = db.relationship(
         "Project", foreign_keys=[linked_project_id], back_populates="decisions"
     )
@@ -148,6 +161,13 @@ class Project(db.Model):
         db.String(36), db.ForeignKey("demand_clusters.id"), nullable=True
     )
 
+    # Responsible department + assigned officer — "assign responsible
+    # department" / "assign officer" from the government workflow.
+    department_id = db.Column(db.String(36), db.ForeignKey("departments.id"), nullable=True)
+    assigned_officer_id = db.Column(
+        db.String(36), db.ForeignKey("government_accounts.id"), nullable=True
+    )
+
     start_date = db.Column(db.Date, nullable=True)
     expected_completion = db.Column(db.Date, nullable=True)
 
@@ -167,6 +187,8 @@ class Project(db.Model):
     linked_demand_cluster = db.relationship(
         "DemandCluster", foreign_keys=[linked_demand_cluster_id]
     )
+    department = db.relationship("Department", foreign_keys=[department_id])
+    assigned_officer = db.relationship("GovernmentAccount", foreign_keys=[assigned_officer_id])
     decisions = db.relationship(
         "GovernmentDecision", back_populates="linked_project",
         foreign_keys="GovernmentDecision.linked_project_id",

@@ -1,0 +1,72 @@
+/* auth.css — shared styling for real signup/signin/account/reset pages.
+   Additive stylesheet, only linked from app/auth/templates/auth/*.html —
+   does not touch main.css or any already-shipped page. Reuses the same
+   color tokens/fonts defined globally in main.css (loaded by base.html on
+   every page) so these screens don't look like a foreign system. */
+
+.auth-page{
+  max-width:440px;margin:0 auto;
+  padding:clamp(32px,5vw,64px) 20px clamp(48px,6vw,80px);
+}
+.auth-page__eyebrow{
+  display:inline-block;margin-bottom:10px;
+  font:700 12px/1.4 'Inter',system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--color-accent);
+}
+.auth-page h1{
+  margin:0 0 8px;font-family:'Manrope','Segoe UI',system-ui,sans-serif;
+  font-weight:800;font-size:1.6rem;line-height:1.25;color:var(--color-ink);
+}
+.auth-page__sub{margin:0 0 28px;color:var(--color-muted);font:400 15px/1.6 'Inter',system-ui,sans-serif}
+
+.auth-card{
+  background:var(--color-card);border:1px solid var(--color-border);border-radius:12px;
+  padding:28px;box-shadow:0 1px 1px rgba(0,0,0,.04);
+}
+
+.auth-field{margin-bottom:18px}
+.auth-field:last-of-type{margin-bottom:0}
+.auth-field label{
+  display:block;margin-bottom:6px;font:600 13px/1.4 'Inter',system-ui,sans-serif;color:var(--color-text);
+}
+.auth-field input[type="text"],
+.auth-field input[type="email"],
+.auth-field input[type="password"],
+.auth-field select{
+  width:100%;box-sizing:border-box;padding:11px 13px;
+  border:1px solid var(--color-border);border-radius:8px;
+  font:400 15px/1.4 'Inter',system-ui,sans-serif;color:var(--color-ink);
+  background:#fff;
+}
+.auth-field input:focus,.auth-field select:focus{
+  outline:none;border-color:var(--color-accent);
+  box-shadow:0 0 0 3px rgba(226,88,42,.12);
+}
+.auth-field__hint{margin:6px 0 0;font:400 13px/1.5 'Inter',system-ui,sans-serif;color:var(--color-faint)}
+
+.auth-submit{width:100%;justify-content:center;margin-top:6px}
+
+.auth-links{
+  margin-top:20px;text-align:center;
+  font:400 14px/1.6 'Inter',system-ui,sans-serif;color:var(--color-muted);
+}
+.auth-links a{color:var(--color-accent);text-decoration:none;font-weight:600}
+.auth-links a:hover{text-decoration:underline}
+
+.auth-readonly{
+  padding:11px 13px;border-radius:8px;background:var(--color-bg-alt);
+  color:var(--color-muted);font:400 15px/1.4 'Inter',system-ui,sans-serif;
+}
+
+.auth-session-row{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 0;border-bottom:1px solid var(--color-border-soft);
+  font:400 14px/1.5 'Inter',system-ui,sans-serif;color:var(--color-text);
+}
+.auth-session-row:last-child{border-bottom:none}
+.auth-session-row__meta{color:var(--color-faint);font-size:13px}
+.auth-session-row__badge{
+  display:inline-block;padding:2px 8px;border-radius:999px;
+  background:var(--color-success-bg);color:var(--color-success);
+  font:700 11px/1.6 'Inter',system-ui,sans-serif;letter-spacing:.03em;text-transform:uppercase;
+}

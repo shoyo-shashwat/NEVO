@@ -1,0 +1,19 @@
+{
+  "_note": "Copy to seed/mplads_ledger.json. Rupees, not crore. Copy figures exactly as the source shows them; use null for anything not published. Never estimate.",
+  "region_code": "MH",
+  "seat_label": "Seat name, State",
+  "period_label": "18th Lok Sabha (2024-29), term to date",
+  "term_end": "2029-06-03",
+  "allocated": null,
+  "recommended": null,
+  "sanctioned": null,
+  "spent": null,
+  "works_recommended": null,
+  "works_sanctioned": null,
+  "works_completed": null,
+  "source": "MPLADS eSAKSHI dashboard (mplads.mospi.gov.in)",
+  "source_url": "https://mplads.mospi.gov.in/digigov/dashboard.html",
+  "read_on": "2026-09-21",
+  "method": "manual",
+  "notes": ""
+}

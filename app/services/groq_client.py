@@ -43,7 +43,7 @@ def _get_client() -> Groq:
 
 
 def _model() -> str:
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3-27b")
+    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,8 @@ Given a citizen's natural-language description of a local development problem, e
   "severity": one of ["low", "medium", "high", "critical", null],
   "duration": free-form string describing how long the problem has existed (null if absent),
   "affected_group": who is affected, e.g. "residents of ward 12", "school children" (null if absent),
-  "problem_summary": one concise sentence describing the problem in plain language,
+  "problem_summary": one concise sentence describing the problem, in the SAME language as the input,
+  "problem_summary_en": the same summary translated into English (identical to problem_summary if the input is already English),
   "language_detected": ISO 639-1 code of the input language (e.g. "en", "hi", "pt", "ru")
 }
 
@@ -73,7 +74,9 @@ Rules:
 - Do not invent location names.
 - category must be one of the fixed values above, or null.
 - severity should reflect the urgency/impact described, not the emotion of the text.
-- problem_summary must be in the same language as the input.
+- problem_summary must be in the same language as the input; problem_summary_en is always English —
+  this is the only field government reviewers who don't read the citizen's language ever see, so it
+  must stand alone and make sense without the original text.
 """
 
 
@@ -128,8 +131,15 @@ def extract_report_fields(raw_text: str) -> dict:
     -------
     dict with keys:
         category, location, severity, duration, affected_group,
-        problem_summary, language_detected
+        problem_summary, problem_summary_en, language_detected
         + meta: { "complete": bool, "missing_fields": list[str] }
+
+    problem_summary_en is the "common format" structured representation —
+    always English, regardless of the citizen's language — so a government
+    reviewer who doesn't read the original language still gets a usable
+    description. problem_summary itself stays in the citizen's own
+    language; original_raw_input (stored on Report, not returned here) is
+    never touched by any of this.
 
     "complete" is True when both category and location are non-null
     (the Draft → Report promotion gate, Progress Log §13.1).
@@ -178,7 +188,13 @@ def extract_report_fields(raw_text: str) -> dict:
     return fields
 
 
-def ask_clarification(raw_text: str, missing_fields: list[str]) -> str:
+_LANGUAGE_NAMES = {
+    "en": "English", "hi": "Hindi", "mr": "Marathi", "kn": "Kannada",
+    "gu": "Gujarati", "ta": "Tamil", "bn": "Bengali",
+}
+
+
+def ask_clarification(raw_text: str, missing_fields: list[str], preferred_language: str | None = None) -> str:
     """
     Generate 1–3 targeted clarification questions for a Draft report.
 
@@ -188,21 +204,32 @@ def ask_clarification(raw_text: str, missing_fields: list[str]) -> str:
     ----------
     raw_text       : the citizen's original input
     missing_fields : list of field names that are null (subset of ["category", "location"])
+    preferred_language : ISO 639-1 code (en/hi/mr/kn/gu/ta/bn) to force the reply
+        into regardless of the input's own language — set when a channel (e.g.
+        WhatsApp) has an explicit per-contact language preference. None keeps
+        the original "reply in the same language as the input" behaviour.
 
     Returns
     -------
     str — a short, natural-language question to ask the citizen.
-          Always in the same language as the original input.
+          In preferred_language if given, else the same language as the input.
     """
     client = _get_client()
 
     fields_str = " and ".join(missing_fields)
+    if preferred_language and preferred_language in _LANGUAGE_NAMES:
+        language_rule = (
+            f"Reply in {_LANGUAGE_NAMES[preferred_language]}, regardless of what "
+            "language the citizen's message is written in."
+        )
+    else:
+        language_rule = "Reply in the same language as the citizen's message."
     system = (
         "You are a helpful assistant for a citizen reporting platform. "
         "A citizen has described a local development problem but their message "
         f"is missing: {fields_str}. "
         "Ask ONE short, friendly follow-up question to obtain the missing information. "
-        "Reply in the same language as the citizen's message. "
+        f"{language_rule} "
         "Do not explain why you are asking. Do not use jargon."
     )
 

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Impact — Nevo{% endblock %}
+
+{% block content %}
+{% set STAGE_ICONS = ['icon-megaphone', 'icon-people', 'icon-building', 'icon-clipboard-check', 'icon-check', 'icon-shield'] %}
+{% set STAGE_CAPTIONS = [
+  'Report a problem like this',
+  'Similar issues brought together',
+  'Authorities review and approve action',
+  'Solutions put to work',
+  'Verified impact on the ground',
+  'People confirmed the change',
+] %}
+<div class="impact-page">
+  <header class="page-header impact-hero">
+    <div>
+      <span class="page-eyebrow">Impact</span>
+      <h1 class="page-title">Did anything actually change?</h1>
+      <p class="page-description">
+        Every number below is real — counted directly from citizen reports, government decisions,
+        projects and verified outcomes. Nothing here is estimated or rounded up.
+      </p>
+    </div>
+    <div class="impact-hero__art" style="background-image: url('{{ url_for('static', filename='img/hero-civic.png') }}')"></div>
+  </header>
+
+  <div class="impact-kpis">
+    {% if personal %}
+      <div class="impact-kpis__card">
+        <span class="impact-kpis__icon impact-kpis__icon--citizen"><svg width="16" height="16"><use href="#icon-mic"/></svg></span>
+        <span class="impact-kpis__value">{{ personal.reports_submitted }}</span>
+        <span class="impact-kpis__label">Reports you submitted</span>
+      </div>
+    {% endif %}
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--info"><svg width="16" height="16"><use href="#icon-people"/></svg></span>
+      <span class="impact-kpis__value">{{ funnel[0].count }}</span>
+      <span class="impact-kpis__label">Citizens participated</span>
+    </div>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--success"><svg width="16" height="16"><use href="#icon-clipboard-check"/></svg></span>
+      <span class="impact-kpis__value">{{ funnel[1].count }}</span>
+      <span class="impact-kpis__label">Collective demands</span>
+    </div>
+    <div class="impact-kpis__card">
+      <span class="impact-kpis__icon impact-kpis__icon--citizen"><svg width="16" height="16"><use href="#icon-building"/></svg></span>
+      <span class="impact-kpis__value">{{ funnel[2].count }}</span>
+      <span class="impact-kpis__label">Government decisions</span>
+    </div>
+    {% if personal %}
+      <div class="impact-kpis__card">
+        <span class="impact-kpis__icon impact-kpis__icon--success"><svg width="16" height="16"><use href="#icon-check"/></svg></span>
+        <span class="impact-kpis__value">{{ personal.issues_resolved }}</span>
+        <span class="impact-kpis__label">Issues resolved</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {# --- Journey: horizontal, one stage per funnel entry, icon + count + label +
+       caption + connector. Every stage shows its own count as text (never
+       color/width alone) per accessible-funnel guidance. --- #}
+  <section class="impact-journey-section">
+    <h2 class="home-section__title">Your community's journey</h2>
+    <p class="page-description">From a local problem to a real solution — this is how change happens.</p>
+    <div class="impact-journey">
+      {% for stage in funnel %}
+        <div class="impact-journey__stage">
+          <span class="impact-journey__icon"><svg width="20" height="20"><use href="#{{ STAGE_ICONS[loop.index0] }}"/></svg></span>
+          <span class="impact-journey__value">{{ "{:,}".format(stage.count) }}</span>
+          <span class="impact-journey__label">{{ stage.label }}</span>
+          <span class="impact-journey__caption">{{ STAGE_CAPTIONS[loop.index0] }}</span>
+        </div>
+        {% if not loop.last %}
+          <div class="impact-journey__connector" aria-hidden="true">
+            <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  {# --- Community outcomes: government-reported vs. citizen-verified, never merged --- #}
+  <div class="impact-body-grid">
+    <section class="impact-outcomes">
+      <div class="home-section__head">
+        <h2 class="home-section__title">Real changes in your area</h2>
+      </div>
+      <p class="page-description">These are the issues that have seen real actual progress.</p>
+      {% if not outcome_cards %}
+        <p class="empty-state">No verified outcomes yet — this section fills in as government-reported projects are completed and citizens confirm the result.</p>
+      {% endif %}
+      <div class="impact-outcome-grid">
+        {% for item in outcome_cards %}
+          <div class="impact-outcome-card">
+            <div class="impact-outcome-card__body">
+              <div class="impact-outcome-card__head">
+                <span class="cluster-card__category">{{ item.category_name }}</span>
+                <span class="impact-outcome-card__project">{{ item.project.name if item.project else '' }}</span>
+              </div>
+
+              {% if item.outcome.before_indicator or item.outcome.after_indicator %}
+                <div class="before-after">
+                  <div class="before-after__col">
+                    <span class="before-after__label">Before</span>
+                    <p>{{ item.outcome.before_indicator or "Not recorded" }}</p>
+                  </div>
+                  <div class="before-after__arrow" aria-hidden="true">
+                    <svg width="16" height="16"><use href="#icon-arrow-right"/></svg>
+                  </div>
+                  <div class="before-after__col before-after__col--after">
+                    <span class="before-after__label">After</span>
+                    <p>{{ item.outcome.after_indicator }}</p>
+                  </div>
+                </div>
+              {% endif %}
+
+              {% if item.outcome.impact_percent is not none %}
+                <p class="impact-outcome-card__gov-stat">
+                  <svg width="13" height="13"><use href="#icon-building"/></svg>
+                  Government reports: <strong>{{ item.outcome.impact_percent }}% improvement</strong>
+                </p>
+              {% endif %}
+
+              {% if item.sentiment and item.sentiment.total > 0 %}
+                <p class="impact-outcome-card__citizen-stat">
+                  <svg width="13" height="13"><use href="#icon-people"/></svg>
+                  Citizens say: <strong>{{ item.sentiment.still_affected_pct }}% still affected</strong>
+                  <span class="evidence-sentiment__official">({{ item.sentiment.total }} responses)</span>
+                </p>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <aside class="impact-methodology">
+      <h3 class="impact-methodology__title">Two ways to measure change</h3>
+      <p class="impact-methodology__desc">We combine both government-reported progress and citizen-verified impact, so you get the full picture.</p>
+      <div class="impact-methodology__row">
+        <svg width="18" height="18"><use href="#icon-building"/></svg>
+        <div>
+          <strong>Government reported</strong>
+          <span>What authorities say has been completed, officially reported.</span>
+        </div>
+      </div>
+      <div class="impact-methodology__row">
+        <svg width="18" height="18"><use href="#icon-people"/></svg>
+        <div>
+          <strong>Citizen verified</strong>
+          <span>What people in the area confirm is true, in their own words.</span>
+        </div>
+      </div>
+      <p class="impact-methodology__note">Real change happens together — that's why we never merge the two into one number.</p>
+    </aside>
+  </div>
+</div>
+{% endblock %}
