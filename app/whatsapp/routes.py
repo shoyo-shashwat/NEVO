@@ -573,7 +573,8 @@ def _process_intake_message(
 
 
 def _groq_model_name() -> str:
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    from app.services.groq_client import _model
+    return _model()
 
 
 # ---------------------------------------------------------------------------

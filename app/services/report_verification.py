@@ -217,8 +217,11 @@ def _call_groq_json(content, max_tokens: int = 500, temperature: float = 0.0) ->
     for extra_kwargs in kwargs_variants:
         call_max_tokens = max_tokens + REASONING_PADDING if extra_kwargs.get('reasoning_format') else max_tokens
         try:
-            resp = _client.chat.completions.create(
-                model=_MODEL,
+            # NEVO: groq_client._chat resolves GROQ_MODEL and falls back to the
+            # default model if the configured one doesn't exist on Groq.
+            from app.services.groq_client import _chat as _groq_chat
+            resp = _groq_chat(
+                _client,
                 messages=messages,
                 max_tokens=call_max_tokens,
                 temperature=temperature,

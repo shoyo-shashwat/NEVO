@@ -42,8 +42,43 @@ def _get_client() -> Groq:
     return Groq(api_key=api_key)
 
 
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
+
+# Set once Groq says the configured GROQ_MODEL doesn't exist (a typo'd or
+# retired model name in the deploy's env). From then on every call uses
+# DEFAULT_MODEL instead of failing — a bad env var must not break reporting.
+_configured_model_missing = False
+
+
 def _model() -> str:
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    if _configured_model_missing:
+        return DEFAULT_MODEL
+    return os.environ.get("GROQ_MODEL", DEFAULT_MODEL)
+
+
+def _is_model_not_found(err: Exception) -> bool:
+    msg = str(err)
+    return "model_not_found" in msg or ("model" in msg and "does not exist" in msg)
+
+
+def _chat(client: Groq, **kwargs):
+    """
+    client.chat.completions.create() with the resolved model. If the
+    configured model doesn't exist on Groq, logs it loudly, switches to
+    DEFAULT_MODEL for this process, and retries once.
+    """
+    global _configured_model_missing
+    try:
+        return client.chat.completions.create(model=_model(), **kwargs)
+    except Exception as e:
+        if _model() != DEFAULT_MODEL and _is_model_not_found(e):
+            logger.error(
+                "GROQ_MODEL=%r does not exist on Groq — falling back to %s. Fix GROQ_MODEL in the environment.",
+                _model(), DEFAULT_MODEL,
+            )
+            _configured_model_missing = True
+            return client.chat.completions.create(model=DEFAULT_MODEL, **kwargs)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -152,8 +187,8 @@ def extract_report_fields(raw_text: str) -> dict:
     """
     client = _get_client()
 
-    response = client.chat.completions.create(
-        model=_model(),
+    response = _chat(
+        client,
         messages=[
             {"role": "system", "content": _EXTRACT_SYSTEM},
             {"role": "user", "content": raw_text},
@@ -233,8 +268,8 @@ def ask_clarification(raw_text: str, missing_fields: list[str], preferred_langua
         "Do not explain why you are asking. Do not use jargon."
     )
 
-    response = client.chat.completions.create(
-        model=_model(),
+    response = _chat(
+        client,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": raw_text},
@@ -276,8 +311,8 @@ def simplify_decision_for_citizen(official_reason: str, language_code: str = "en
         "Output only the rewritten text, nothing else."
     )
 
-    response = client.chat.completions.create(
-        model=_model(),
+    response = _chat(
+        client,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": official_reason},

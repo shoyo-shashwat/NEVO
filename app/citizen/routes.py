@@ -15,6 +15,7 @@ from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import func, case
 from datetime import datetime, timezone
 import json
+import re
 import logging
 import time
 
@@ -264,6 +265,18 @@ def report_flow():
             "meta": {"complete": False, "missing_fields": ["category", "location"]},
         }
     meta = extracted.get("meta", {})
+
+    # AI unavailable or unsure of the category → keyword fallback, so an
+    # obvious report ("drainage holes open") isn't bounced to a follow-up.
+    if not extracted.get("category"):
+        keyword_category = _keyword_category(raw_text)
+        if keyword_category:
+            extracted["category"] = keyword_category
+            missing = [f for f in meta.get("missing_fields", []) if f != "category"]
+            meta = {**meta, "missing_fields": missing, "complete": not missing}
+            extracted["meta"] = meta
+    if not extracted.get("problem_summary_en"):
+        extracted["problem_summary_en"] = raw_text   # extraction failed — officials still see the citizen's words
 
     # A citizen-chosen area answers "where?" even when the text doesn't —
     # don't send them to a clarification round just for the location.
@@ -1189,8 +1202,8 @@ def _in_region_scope(cluster_region_ids, region_scope) -> bool:
 def _groq_model_name() -> str:
     """Mirrors groq_client._model() — kept in sync so audit logs record the
     model actually used, not a hardcoded guess."""
-    import os
-    return os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    from app.services.groq_client import _model
+    return _model()
 
 
 def _current_identity():
@@ -1254,6 +1267,29 @@ def _guard_against_spam_and_duplicates(raw_text: str):
             return redirect(url_for("citizen.demand_result", report_id=r.id))
 
     return None
+
+
+# Keyword fallback for the category when Groq extraction fails or returns
+# none. Codes match the seeded Category rows. Includes common Hindi/Hinglish.
+_CATEGORY_KEYWORDS = {
+    "water_sanitation": ("water", "sanitation", "sanitaiton", "drain", "drainage", "sewage", "sewer",
+                         "toilet", "pipe", "leak", "flood", "paani", "pani", "naali", "nali", "nala", "gutter"),
+    "roads_transport": ("road", "pothole", "street", "bridge", "traffic", "bus", "footpath", "sadak",
+                        "gadha", "gaddha", "transport"),
+    "electricity_utilities": ("electricity", "power", "light", "streetlight", "transformer", "wire",
+                              "outage", "bijli", "khamba"),
+    "waste_environment": ("garbage", "waste", "trash", "dump", "litter", "kachra", "pollution", "smoke"),
+    "healthcare_access": ("hospital", "clinic", "doctor", "health", "medicine", "ambulance", "dawai"),
+    "education_access": ("school", "teacher", "education", "college", "classroom", "padhai"),
+}
+
+
+def _keyword_category(text: str):
+    """Most-mentioned category by keyword, or None if no keyword matches."""
+    words = set(re.findall(r"[a-z]+", (text or "").lower()))
+    scores = {code: sum(1 for k in kws if k in words) for code, kws in _CATEGORY_KEYWORDS.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] else None
 
 
 def _verify_submission(raw_text: str, evidence_file) -> dict:
