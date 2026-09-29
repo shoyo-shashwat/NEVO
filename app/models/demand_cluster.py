@@ -216,6 +216,61 @@ class DemandCluster(db.Model):
             "still_affected_pct": round(still_affected / total * 100),
         }
 
+    # ------------------------------------------------------------------
+    # Bulk versions of the three properties above — ONE grouped query each
+    # for a whole list of clusters. A per-cluster property in a loop is a
+    # round-trip per cluster; against a remote Neon DB (~70 ms each) the
+    # community page's ~200 of them took 15+ s. Same logic, same results.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def bulk_counts(cluster_ids) -> tuple[dict, dict]:
+        """({id: total_reports}, {id: unique_contributors}) for cluster_ids."""
+        from sqlalchemy import case
+        from app.models.citizen_models import Contribution
+        if not cluster_ids:
+            return {}, {}
+        identity = case(
+            (Contribution.citizen_account_id.isnot(None),
+             func.concat("acct:", Contribution.citizen_account_id)),
+            else_=func.concat("anon:", Contribution.anonymous_token),
+        )
+        rows = (
+            db.session.query(Contribution.demand_cluster_id,
+                             func.count(Contribution.id),
+                             func.count(func.distinct(identity)))
+            .filter(Contribution.demand_cluster_id.in_(list(cluster_ids)))
+            .group_by(Contribution.demand_cluster_id)
+            .all()
+        )
+        totals = {cid: 0 for cid in cluster_ids}
+        uniques = {cid: 0 for cid in cluster_ids}
+        for cid, total, unique in rows:
+            totals[cid], uniques[cid] = total, unique
+        return totals, uniques
+
+    @staticmethod
+    def bulk_sentiment(cluster_ids) -> dict:
+        """{id: community_sentiment dict} for cluster_ids (same shape as the property)."""
+        from app.models.citizen_models import Verification
+        counts = {cid: {} for cid in cluster_ids}
+        if cluster_ids:
+            rows = (
+                db.session.query(Verification.demand_cluster_id, Verification.state, func.count(Verification.id))
+                .filter(Verification.demand_cluster_id.in_(list(cluster_ids)))
+                .group_by(Verification.demand_cluster_id, Verification.state)
+                .all()
+            )
+            for cid, state, cnt in rows:
+                counts[cid][state] = cnt
+        result = {}
+        for cid, c in counts.items():
+            votes = sum(c.values())
+            total = votes or 1
+            still_affected = c.get("StillHappening", 0) + c.get("Worse", 0)
+            result[cid] = {**c, "total": total, "votes": votes,
+                           "still_affected_pct": round(still_affected / total * 100)}
+        return result
+
     def __repr__(self):
         return (
             f"<DemandCluster {self.id} "

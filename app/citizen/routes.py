@@ -677,39 +677,51 @@ def community():
 
     citizen_account_id, anonymous_token = _current_identity()
 
-    # Annotate each cluster with derived counts (avoids N+1 in template)
-    cluster_data = []
-    for c in clusters:
-        cat = db.session.get(Category, c.category_id)
-        supported_query = Contribution.query.filter_by(demand_cluster_id=c.id)
-        if citizen_account_id:
-            supported_query = supported_query.filter_by(citizen_account_id=citizen_account_id)
-        else:
-            supported_query = supported_query.filter_by(anonymous_token=anonymous_token)
-        cluster_data.append({
-            "cluster": c,
-            "category_name": cat.name if cat else "",
-            "category_code": cat.code if cat else "",
-            "total_reports": c.total_reports,
-            "unique_contributors": c.unique_contributors,
-            "sentiment": c.community_sentiment,
-            "already_supported": supported_query.first() is not None,
-        })
-
-    categories = Category.query.all()
-
-    # Community-wide activity snapshot — always unfiltered by category (but
-    # still scoped to this citizen's own country/state, same as the list
-    # above), so the panel reads as "this community" context rather than
-    # shifting with category filters.
+    # Annotate each cluster with derived counts — batched: one grouped query
+    # per figure for all clusters, not one query per cluster (see
+    # DemandCluster.bulk_counts; the per-cluster version took 15+ s on Neon).
     all_active = DemandCluster.query.filter(
         DemandCluster.active_status.in_(["Active", "UnderGovernmentReview"]),
         DemandCluster.country_id == country_id,
     ).all()
     all_active = [c for c in all_active if _in_region_scope(c.region_ids, region_scope)]
+
+    ids = [c.id for c in clusters]
+    totals, uniques = DemandCluster.bulk_counts({c.id for c in all_active} | set(ids))
+    sentiments = DemandCluster.bulk_sentiment(ids)
+    categories = Category.query.all()
+    cats_by_id = {cat.id: cat for cat in categories}
+
+    supported_ids = set()
+    if ids:
+        mine = Contribution.query.with_entities(Contribution.demand_cluster_id).filter(
+            Contribution.demand_cluster_id.in_(ids))
+        if citizen_account_id:
+            mine = mine.filter(Contribution.citizen_account_id == citizen_account_id)
+        else:
+            mine = mine.filter(Contribution.anonymous_token == anonymous_token)
+        supported_ids = {row[0] for row in mine.all()}
+
+    cluster_data = []
+    for c in clusters:
+        cat = cats_by_id.get(c.category_id)
+        cluster_data.append({
+            "cluster": c,
+            "category_name": cat.name if cat else "",
+            "category_code": cat.code if cat else "",
+            "total_reports": totals.get(c.id, 0),
+            "unique_contributors": uniques.get(c.id, 0),
+            "sentiment": sentiments.get(c.id),
+            "already_supported": c.id in supported_ids,
+        })
+
+    # Community-wide activity snapshot — always unfiltered by category (but
+    # still scoped to this citizen's own country/state, same as the list
+    # above), so the panel reads as "this community" context rather than
+    # shifting with category filters.
     areas = {loc for c in all_active for loc in (c.affected_localities or [])}
     community_stats = {
-        "total_participants": sum(c.unique_contributors for c in all_active),
+        "total_participants": sum(uniques.get(c.id, 0) for c in all_active),
         "active_demands": len(all_active),
         "areas_covered": len(areas),
     }
