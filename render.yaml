@@ -13,6 +13,10 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: qwen/qwen3.8-27b
+      - key: SIGHTENGINE_API_USER     # optional — AI-image check on citizen report photos
+        sync: false
+      - key: SIGHTENGINE_API_SECRET
+        sync: false
       - key: COHERE_API_KEY
         sync: false
       - key: ELEVENLABS_API_KEY

@@ -20,6 +20,26 @@
     </div>
   {% endif %}
 
+  {% if verification_block %}
+    {% set vb = verification_block %}
+    <dialog class="verify-modal" id="verify-modal" aria-labelledby="verify-modal-title">
+      <div class="verify-modal__icon">
+        <svg width="22" height="22"><use href="#icon-{{ 'camera' if vb.kind == 'ai_image' else 'alert-triangle' }}"/></svg>
+      </div>
+      {% if vb.kind == 'ai_image' %}
+        <h2 class="verify-modal__title" id="verify-modal-title">AI-generated image detected</h2>
+        <p class="verify-modal__body">Please upload a real photo, or submit without one.</p>
+      {% else %}
+        <h2 class="verify-modal__title" id="verify-modal-title">Spam detected</h2>
+        <p class="verify-modal__body">Please describe a real problem in your area.</p>
+      {% endif %}
+
+      <form method="dialog">
+        <button class="btn btn--primary verify-modal__btn" autofocus>Edit report</button>
+      </form>
+    </dialog>
+  {% endif %}
+
   <div class="report-flow">
     <form method="POST" action="{{ url_for('citizen.report_flow') }}"
           enctype="multipart/form-data" id="report-form">
@@ -114,6 +134,36 @@
 
 {% block scripts %}
 <script>
+// Verification popup — shown when the server rejected the submission as
+// spam or an AI-generated photo (citizen/routes.py::_verify_submission).
+(function () {
+  var dlg = document.getElementById('verify-modal');
+  if (!dlg) { return; }
+  if (typeof dlg.showModal === 'function') { dlg.showModal(); }
+  else { dlg.setAttribute('open', ''); }
+  dlg.addEventListener('close', function () {
+    var t = document.getElementById('text-input');
+    if (t) { t.focus(); }
+  });
+}());
+
+// Submitting state — the verification checks can take a few seconds.
+(function () {
+  var form = document.getElementById('report-form');
+  var btn = form && form.querySelector('.report-flow__submit');
+  if (!btn) { return; }
+  var idleLabel = btn.innerHTML;
+  form.addEventListener('submit', function () {
+    btn.disabled = true;
+    btn.textContent = 'Checking your report…';
+  });
+  // Back-button restores from bfcache would otherwise leave it disabled.
+  window.addEventListener('pageshow', function () {
+    btn.disabled = false;
+    btn.innerHTML = idleLabel;
+  });
+}());
+
 // GPS location capture — non-blocking, fills hidden lat/lng fields.
 // If denied or unavailable, location_hint text field is the fallback.
 (function () {

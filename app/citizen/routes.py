@@ -206,6 +206,21 @@ def report_flow():
     if guard_redirect:
         return guard_redirect
 
+    # --- Verification: spam text + AI-generated photo ---
+    # Runs before extraction so a rejected submission never creates a Report
+    # or spends Cohere/Groq extraction calls. On rejection the form re-renders
+    # with the citizen's input intact and a popup explaining why.
+    verification = _verify_submission(raw_text, request.files.get("evidence_photo"))
+    if not verification["approved"]:
+        return render_template(
+            "citizen/report_flow.html",
+            verification_block=verification,
+            partial_text=raw_text,
+            location_hint=location_hint,
+            latitude=latitude,
+            longitude=longitude,
+        )
+
     # --- AI extraction ---
     # If citizen provided a location hint, append it to the text so Groq
     # can extract it as the location field. Keeps the pipeline unchanged.
@@ -1163,6 +1178,32 @@ def _guard_against_spam_and_duplicates(raw_text: str):
             return redirect(url_for("citizen.demand_result", report_id=r.id))
 
     return None
+
+
+def _verify_submission(raw_text: str, evidence_file) -> dict:
+    """
+    Run services/report_verification.py (spam text → AI-image) on a citizen
+    report. Reads the evidence photo's bytes and rewinds the stream so
+    save_evidence_photo() can read it again afterwards.
+    """
+    from app.services.report_verification import verify_citizen_report
+
+    image_bytes, mime, filename = None, "image/jpeg", ""
+    if evidence_file and evidence_file.filename and (evidence_file.mimetype or "").startswith("image/"):
+        image_bytes = evidence_file.read()
+        evidence_file.stream.seek(0)
+        mime = evidence_file.mimetype
+        filename = evidence_file.filename
+
+    _t0 = time.monotonic()
+    result = verify_citizen_report(raw_text, image_bytes=image_bytes, mime=mime, filename=filename)
+    if not result["approved"]:
+        logger.info(
+            "Report rejected by verification: kind=%s method=%s confidence=%s reason=%s (%dms)",
+            result["kind"], result.get("method"), result.get("confidence"),
+            (result.get("reason") or "")[:120], int((time.monotonic() - _t0) * 1000),
+        )
+    return result
 
 
 def _create_cluster_from_report(report: Report) -> DemandCluster:

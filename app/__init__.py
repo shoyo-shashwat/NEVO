@@ -64,6 +64,20 @@ def create_app(config_class=Config):
     # ------------------------------------------------------------------
     from app.auth.session import load_logged_in_user
 
+    # Cache-bust static assets: url_for('static', ...) gets ?v=<file mtime>,
+    # so a changed CSS/JS file is refetched instead of served from the
+    # browser's cache (a stale main.css left the report popup un-centred).
+    import os
+
+    @app.url_defaults
+    def _static_cache_bust(endpoint, values):
+        if endpoint == "static" and "filename" in values and "v" not in values:
+            path = os.path.join(app.static_folder, values["filename"])
+            try:
+                values["v"] = int(os.stat(path).st_mtime)
+            except OSError:
+                pass
+
     @app.before_request
     def _load_logged_in_user_for_dynamic_routes():
         # Static assets (CSS/JS/images) don't need the account looked up —

@@ -21,6 +21,12 @@ groq==0.29.0                   # Groq Python SDK
 cohere==5.15.0                 # Cohere Embed v4
 elevenlabs==2.3.0              # ElevenLabs Scribe v2
 
+# Report verification — spam ML model + AI-image detection (services/report_verification.py)
+scikit-learn==1.9.0            # loads ml/spam_clf.pkl — must match the version it was trained with
+Pillow==12.3.0                 # EXIF / C2PA / ELA checks
+numpy==2.4.6                   # ELA pixel statistics
+requests==2.32.3               # Sightengine API
+
 # Messaging channels
 twilio==9.11.1                 # WhatsApp citizen intake webhook
 
