@@ -1255,7 +1255,9 @@ def _guard_against_spam_and_duplicates(raw_text: str):
 
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=_DUPLICATE_WINDOW_MINUTES)
-    query = Report.query.filter(Report.created_at >= cutoff)
+    # Drafts don't count: a report stuck as a Draft (e.g. the AI was down)
+    # must be resubmittable, not bounced back to itself as a "duplicate".
+    query = Report.query.filter(Report.created_at >= cutoff, Report.status != "Draft")
     if citizen_account_id:
         query = query.filter(Report.citizen_account_id == citizen_account_id)
     else:
