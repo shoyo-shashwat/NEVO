@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Report a need — Nevo{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="report-flow-page">
 
@@ -71,31 +75,58 @@
       </div>
 
       <div class="report-flow__fields">
-        {# Location hint — optional, gives AI a fallback if not mentioned in text #}
-        <div class="report-flow__field-card report-flow__location">
-          <label for="location-hint" class="report-flow__location-label">
-            <svg width="15" height="15" style="vertical-align:-2px;margin-right:3px;"><use href="#icon-pin"/></svg>
-            Which area or neighbourhood? <span class="report-flow__optional">(optional)</span>
-          </label>
-          <input
-            type="text"
-            name="location_hint"
-            id="location-hint"
-            class="report-flow__location-input"
-            placeholder="e.g. Nashik, Ward 12, Sinnar Block…"
-            value="{{ location_hint or '' }}"
-          >
-          <p id="geo-status" class="report-flow__geo-status"></p>
-        </div>
-
-        {# Evidence photo — optional, Finding 6. Image-only for MVP. #}
+        {# Evidence photo — optional. AreaPulse-style: pick a photo, then let AI
+           write the description from it (the citizen can still edit it). #}
         <div class="report-flow__field-card report-flow__evidence">
           <label for="evidence-photo" class="report-flow__evidence-label">
             <svg width="15" height="15" style="vertical-align:-2px;margin-right:2px;"><use href="#icon-camera"/></svg>
             Add a photo <span class="report-flow__optional">(optional)</span>
           </label>
           <input type="file" name="evidence_photo" id="evidence-photo" accept="image/*">
+          <img id="photo-preview" class="report-flow__photo-preview" alt="" hidden>
+          <div id="photo-actions" class="report-flow__photo-actions" hidden>
+            <button type="button" id="ai-describe-btn" class="btn btn--secondary report-flow__ai-btn">
+              ✨ Describe it with AI
+            </button>
+            <button type="button" id="photo-remove-btn" class="btn btn--secondary report-flow__remove-btn">
+              ✕ Remove photo
+            </button>
+          </div>
+          <p id="ai-describe-status" class="report-flow__geo-status"></p>
           <p class="report-flow__field-hint">A photo makes it easier for officials to verify the issue.</p>
+        </div>
+
+        {# Location — AreaPulse-style: pick an area (or auto-detect it from GPS)
+           and pin the exact spot on the map. #}
+        <div class="report-flow__field-card report-flow__location">
+          <label for="region-select" class="report-flow__location-label">
+            <svg width="15" height="15" style="vertical-align:-2px;margin-right:3px;"><use href="#icon-pin"/></svg>
+            Where is it?
+          </label>
+          <div class="report-flow__area-row">
+            <select name="region_id" id="region-select" class="report-flow__location-input">
+              <option value="">Select your area…</option>
+              {% for state, districts in region_groups %}
+                <optgroup label="{{ state.name }}">
+                  {% for d in districts %}
+                    <option value="{{ d.id }}" {% if d.id == selected_region_id %}selected{% endif %}>{{ d.name }}</option>
+                  {% endfor %}
+                  <option value="{{ state.id }}" {% if state.id == selected_region_id %}selected{% endif %}>{{ state.name }} (whole state)</option>
+                </optgroup>
+              {% endfor %}
+            </select>
+            <button type="button" id="locate-btn" class="btn btn--secondary report-flow__locate-btn">📍 Use my location</button>
+          </div>
+          <div id="pin-map" class="report-flow__pin-map" aria-label="Map — tap to pin the exact spot"></div>
+          <p id="geo-status" class="report-flow__geo-status">Tap the map to pin the exact spot.</p>
+          <input
+            type="text"
+            name="location_hint"
+            id="location-hint"
+            class="report-flow__location-input"
+            placeholder="Landmark or street (optional) — e.g. near Ward 12 bus stand"
+            value="{{ location_hint or '' }}"
+          >
         </div>
       </div>
 
@@ -133,6 +164,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
 // Verification popup — shown when the server rejected the submission as
 // spam or an AI-generated photo (citizen/routes.py::_verify_submission).
@@ -164,31 +196,189 @@
   });
 }());
 
-// GPS location capture — non-blocking, fills hidden lat/lng fields.
-// If denied or unavailable, location_hint text field is the fallback.
+// Location — AreaPulse-style area picker + pin map.
+//   • Map: tap to pin the exact spot (fills hidden latitude/longitude).
+//   • "Use my location": GPS → pin → reverse-geocode (OpenStreetMap
+//     Nominatim) → auto-select the matching district/state in the dropdown.
+//   • Choosing an area with no pin yet pans the map to it.
 (function () {
   var latInput = document.getElementById('latitude-input');
   var lngInput = document.getElementById('longitude-input');
   var geoStatus = document.getElementById('geo-status');
+  var select = document.getElementById('region-select');
+  var locateBtn = document.getElementById('locate-btn');
+  if (typeof L === 'undefined') { return; }
 
-  if (!navigator.geolocation) { return; }
+  var map = L.map('pin-map', { scrollWheelZoom: false }).setView([22.5, 79], 4);
+  nevoTileLayer().addTo(map);
+  var marker = null;
 
-  geoStatus.textContent = 'Detecting your location\u2026';
+  function pin(lat, lng, zoom) {
+    latInput.value = lat.toFixed(6);
+    lngInput.value = lng.toFixed(6);
+    if (marker) { marker.setLatLng([lat, lng]); }
+    else {
+      marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+      marker.on('dragend', function () {
+        var p = marker.getLatLng(); pin(p.lat, p.lng);
+      });
+    }
+    if (zoom) { map.setView([lat, lng], zoom); }
+    geoStatus.textContent = 'Spot pinned ✓ — drag the pin or tap the map to adjust.';
+  }
 
-  navigator.geolocation.getCurrentPosition(
-    function (pos) {
-      // Don't overwrite GPS already carried from a prior clarification round-trip
-      if (!latInput.value) {
-        latInput.value = pos.coords.latitude;
-        lngInput.value = pos.coords.longitude;
-      }
-      geoStatus.textContent = 'Location detected \u2713';
-    },
-    function () {
-      geoStatus.textContent = '';
-    },
-    { timeout: 8000, maximumAge: 60000 }
-  );
+  map.on('click', function (e) { pin(e.latlng.lat, e.latlng.lng); });
+
+  // Pin carried over from a previous round-trip (clarification / rejection)
+  if (latInput.value && lngInput.value) {
+    pin(parseFloat(latInput.value), parseFloat(lngInput.value), 15);
+  }
+
+  function norm(s) {
+    return (s || '').toLowerCase()
+      .replace(/\(whole state\)/, '')
+      .replace(/\b(district|urban|rural|city|division)\b/g, '')
+      .replace(/[^a-zÀ-ɏЀ-ӿ ]/g, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+
+  // Pick the dropdown option matching the reverse-geocoded address:
+  // a district first, otherwise its state.
+  function selectFromAddress(addr) {
+    var districtNames = [addr.state_district, addr.county, addr.city, addr.city_district, addr.town, addr.suburb]
+      .map(norm).filter(Boolean);
+    var stateName = norm(addr.state);
+    var districtMatch = null, stateMatch = null;
+    Array.prototype.forEach.call(select.options, function (o) {
+      if (!o.value) { return; }
+      var n = norm(o.text);
+      var isState = /\(whole state\)/.test(o.text);
+      if (isState && stateName && n === stateName) { stateMatch = o; }
+      if (!isState && !districtMatch && n && districtNames.some(function (d) {
+        return d === n || d.indexOf(n) === 0 || n.indexOf(d) === 0;
+      })) { districtMatch = o; }
+    });
+    var hit = districtMatch || stateMatch;
+    if (hit) { select.value = hit.value; }
+    return hit;
+  }
+
+  locateBtn.addEventListener('click', function () {
+    if (!navigator.geolocation) {
+      geoStatus.textContent = 'Location isn’t supported on this browser — pick your area instead.';
+      return;
+    }
+    locateBtn.disabled = true;
+    geoStatus.textContent = 'Detecting your location…';
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      pin(lat, lng, 16);
+      fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&lat=' + lat + '&lon=' + lng,
+            { headers: { 'Accept-Language': 'en' } })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var hit = d && d.address ? selectFromAddress(d.address) : null;
+          geoStatus.textContent = hit
+            ? 'Area set to ' + hit.text.replace(' (whole state)', '') + ' ✓ — drag the pin to adjust.'
+            : 'Spot pinned ✓ — we couldn’t match your area, please pick it above.';
+        })
+        .catch(function () { geoStatus.textContent = 'Spot pinned ✓ — please pick your area above.'; })
+        .then(function () { locateBtn.disabled = false; });
+    }, function () {
+      locateBtn.disabled = false;
+      geoStatus.textContent = 'Location access denied — pick your area and tap the map instead.';
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+
+  select.addEventListener('change', function () {
+    var o = select.options[select.selectedIndex];
+    if (!o || !o.value || marker) { return; }
+    var wholeState = /\(whole state\)/.test(o.text);
+    var q = o.text.replace(' (whole state)', '') + (!wholeState && o.parentNode.label ? ', ' + o.parentNode.label : '');
+    fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res && res[0]) { map.setView([parseFloat(res[0].lat), parseFloat(res[0].lon)], wholeState ? 7 : 11); }
+      })
+      .catch(function () {});
+  });
+}());
+
+// Photo → preview → "Describe it with AI" (AreaPulse /ai/analyze-image).
+// Groq vision writes the description; the citizen can edit it before submitting.
+(function () {
+  var input = document.getElementById('evidence-photo');
+  var preview = document.getElementById('photo-preview');
+  var btn = document.getElementById('ai-describe-btn');
+  var actions = document.getElementById('photo-actions');
+  var removeBtn = document.getElementById('photo-remove-btn');
+  var status = document.getElementById('ai-describe-status');
+  var textInput = document.getElementById('text-input');
+  var csrf = document.querySelector('input[name=csrf_token]').value;
+  var aiText = null;     // description the AI wrote, to undo it on remove
+  var requestNo = 0;     // ignore replies for a photo that was removed/replaced
+
+  function clearPhoto() {
+    requestNo++;
+    input.value = '';
+    if (preview.src) { URL.revokeObjectURL(preview.src); }
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    actions.hidden = true;
+    btn.disabled = false;
+    status.textContent = '';
+    // Undo the AI description only if the citizen hasn't edited it.
+    if (aiText !== null && textInput.value === aiText) { textInput.value = ''; }
+    aiText = null;
+  }
+
+  input.addEventListener('change', function () {
+    var f = input.files[0];
+    if (!f) { clearPhoto(); return; }
+    requestNo++;
+    status.textContent = '';
+    preview.src = URL.createObjectURL(f);
+    preview.hidden = false;
+    actions.hidden = false;
+    btn.disabled = false;
+    btn.textContent = '✨ Describe it with AI';
+    if (!textInput.value.trim() || textInput.value === aiText) { btn.click(); }   // nothing typed yet → describe automatically
+  });
+
+  removeBtn.addEventListener('click', clearPhoto);
+
+  btn.addEventListener('click', function () {
+    var f = input.files[0];
+    if (!f) { return; }
+    var mine = ++requestNo;
+    var fd = new FormData();
+    fd.append('photo', f);
+    btn.disabled = true;
+    btn.textContent = 'Reading your photo…';
+    status.textContent = '';
+    fetch('{{ url_for("citizen.analyze_report_photo") }}', { method: 'POST', body: fd, headers: { 'X-CSRFToken': csrf } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (mine !== requestNo) { return; }
+        if (d.ai_image) {
+          status.textContent = 'This photo looks AI-generated — please use a real photo.';
+        } else if (d.error) {
+          status.textContent = d.error;
+        } else if (d.description) {
+          textInput.value = aiText = d.description;
+          status.textContent = d.is_civic_issue === false
+            ? 'Description added — but this may not show a community problem. Check it before submitting.'
+            : 'Description added from your photo ✓ — edit it if needed.';
+        } else {
+          status.textContent = 'Couldn’t describe this photo — please write it yourself.';
+        }
+      })
+      .catch(function () { if (mine === requestNo) { status.textContent = 'Couldn’t reach the server — please describe it yourself.'; } })
+      .then(function () {
+        if (mine !== requestNo) { return; }
+        btn.disabled = false; btn.textContent = '✨ Describe again';
+      });
+  });
 }());
 
 // Web Speech API — types words directly into the textarea as the citizen speaks.

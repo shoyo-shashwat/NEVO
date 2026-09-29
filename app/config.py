@@ -35,6 +35,12 @@ class Config:
     GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
     GROQ_MODEL = os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
 
+    # Map tiles (all Leaflet maps, via nevoTileLayer() in templates/base.html).
+    # Without a key the maps fall back to plain OpenStreetMap tiles.
+    # The key is sent to browsers — restrict it to your domains in MapTiler.
+    MAPTILER_KEY = os.environ.get("MAPTILER_KEY", "")
+    MAPTILER_STYLE = os.environ.get("MAPTILER_STYLE", "streets-v2")
+
     COHERE_API_KEY = os.environ.get("COHERE_API_KEY", "")
 
     ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")

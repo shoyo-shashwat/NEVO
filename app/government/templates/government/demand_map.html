@@ -112,9 +112,7 @@
   var demandPath = function (id) { return '/gov/demand/' + id + ({{ 'true' if can_decide else 'false' }} ? '/decide' : ''); };
   var demandLabel = {{ ('Review & decide' if can_decide else 'Review evidence') | tojson }};
   var map = L.map('map').setView(mapView.center, mapView.zoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors', maxZoom: 18,
-  }).addTo(map);
+  nevoTileLayer().addTo(map);
 
   var CATEGORY_ICONS = {
     water_sanitation: 'icon-cat-water',

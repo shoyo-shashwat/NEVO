@@ -102,10 +102,7 @@
   var mapView = {{ map_view | tojson }};
   var map = L.map('map').setView(mapView.center, mapView.zoom);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 18,
-  }).addTo(map);
+  nevoTileLayer().addTo(map);
 
   // Category code -> icon symbol id, mirrors CAT_ICONS in the template above.
   var CATEGORY_ICONS = {

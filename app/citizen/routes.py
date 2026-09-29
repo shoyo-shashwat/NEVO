@@ -21,7 +21,7 @@ import time
 logger = logging.getLogger(__name__)
 
 from app.citizen import citizen_bp
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models.citizen_models import Report, Contribution, Verification, Evidence
 from app.models.demand_cluster import DemandCluster
 from app.models.shared import Category, AdministrativeRegion, EventLog
@@ -141,7 +141,7 @@ def report_flow():
              Report → cohere_client.embed() → demand_matching.find_similar()
     """
     if request.method == "GET":
-        return render_template("citizen/report_flow.html")
+        return _render_report_form()
 
     # --- Determine channel and get raw text ---
     channel = request.form.get("channel", "text")
@@ -154,6 +154,15 @@ def report_flow():
     latitude = float(lat_raw) if lat_raw else None
     longitude = float(lng_raw) if lng_raw else None
 
+    # Area picked from the dropdown / auto-detected from GPS (AreaPulse-style
+    # location selection). Only trusted if it belongs to the citizen's country.
+    selected_region = None
+    region_id_raw = (request.form.get("region_id") or "").strip()
+    if region_id_raw:
+        selected_region = AdministrativeRegion.query.filter_by(
+            id=region_id_raw, country_id=_country_id_from_session()
+        ).first()
+
     # AI calls in this view are buffered here and persisted as
     # AIProcessingLog rows once report.id exists (after the flush below) —
     # the audit trail the AI pipeline requires: provider/model/confidence/
@@ -165,7 +174,7 @@ def report_flow():
         audio = request.files.get("audio")
         if not audio:
             flash("No audio received. Please try again.", "error")
-            return render_template("citizen/report_flow.html")
+            return _render_report_form()
         try:
             from app.services.elevenlabs_client import transcribe_audio, TranscriptionError
             _t0 = time.monotonic()
@@ -187,12 +196,12 @@ def report_flow():
                         success=False, error_message=str(e)[:2000])
             db.session.commit()
             flash(str(e), "error")
-            return render_template("citizen/report_flow.html")
+            return _render_report_form()
     else:
         raw_text = (request.form.get("text_input") or "").strip()
         if not raw_text:
             flash("Please describe your community's need.", "error")
-            return render_template("citizen/report_flow.html")
+            return _render_report_form()
 
     # --- Ingestion & Safety: rate limit + duplicate guard ---
     # Docs (Government/Citizen architecture, Layer 2 "Ingestion & Safety" /
@@ -212,21 +221,22 @@ def report_flow():
     # with the citizen's input intact and a popup explaining why.
     verification = _verify_submission(raw_text, request.files.get("evidence_photo"))
     if not verification["approved"]:
-        return render_template(
-            "citizen/report_flow.html",
+        return _render_report_form(
             verification_block=verification,
             partial_text=raw_text,
             location_hint=location_hint,
             latitude=latitude,
             longitude=longitude,
+            selected_region_id=selected_region.id if selected_region else None,
         )
 
     # --- AI extraction ---
     # If citizen provided a location hint, append it to the text so Groq
     # can extract it as the location field. Keeps the pipeline unchanged.
     extraction_text = raw_text
-    if location_hint:
-        extraction_text = raw_text + f"\n[Location hint: {location_hint}]"
+    hint_parts = [p for p in (location_hint, selected_region.name if selected_region else "") if p]
+    if hint_parts:
+        extraction_text = raw_text + f"\n[Location hint: {', '.join(hint_parts)}]"
 
     from app.services.groq_client import extract_report_fields, ask_clarification
     _t0 = time.monotonic()
@@ -255,6 +265,13 @@ def report_flow():
         }
     meta = extracted.get("meta", {})
 
+    # A citizen-chosen area answers "where?" even when the text doesn't —
+    # don't send them to a clarification round just for the location.
+    if selected_region is not None:
+        missing = [f for f in meta.get("missing_fields", []) if f != "location"]
+        meta = {**meta, "missing_fields": missing, "complete": not missing}
+        extracted["meta"] = meta
+
     # Resolve category_id from category code
     category_id = None
     if extracted.get("category"):
@@ -273,9 +290,9 @@ def report_flow():
     # which is exactly the kind of single-state-bias bug the multi-state
     # rework targets. Anonymous citizens (no account) keep the old
     # broadest-region fallback since there's no personal scope to use.
-    region_id = None
+    region_id = selected_region.id if selected_region else None
     country_id = _country_id_from_session()
-    if extracted.get("location") and country_id:
+    if region_id is None and extracted.get("location") and country_id:
         region = (
             AdministrativeRegion.query
             .filter_by(country_id=country_id)
@@ -391,14 +408,14 @@ def report_flow():
                             error_message=f"{type(e).__name__}: {str(e)[:500]}")
                 clarification = "Could you describe the problem in a bit more detail?"
         db.session.commit()
-        return render_template(
-            "citizen/report_flow.html",
+        return _render_report_form(
             clarification=clarification,
             report_id=report.id,
             partial_text=raw_text,
             location_hint=location_hint,
             latitude=latitude,
             longitude=longitude,
+            selected_region_id=selected_region.id if selected_region else None,
         )
 
     # --- Report is complete: match against existing demand ---
@@ -438,6 +455,65 @@ def report_flow():
 
     db.session.commit()
     return redirect(url_for("citizen.demand_result", report_id=report.id))
+
+
+def _render_report_form(**ctx):
+    """
+    Render report_flow.html with the area picker's options: the citizen's
+    country's states, each followed by its districts. District rows have no
+    parent_region_id in the seed data, so they're grouped by id prefix
+    (region-in-gj-ahmedabad → region-in-gj).
+    """
+    regions = (
+        AdministrativeRegion.query
+        .filter_by(country_id=_country_id_from_session())
+        .filter(AdministrativeRegion.level.in_(("state_province", "district_municipality")))
+        .order_by(AdministrativeRegion.name.asc())
+        .all()
+    )
+    states = [r for r in regions if r.level == "state_province"]
+    districts_by_state = {}
+    for r in regions:
+        if r.level == "district_municipality":
+            state_id = r.parent_region_id or "-".join(r.id.split("-")[:3])
+            districts_by_state.setdefault(state_id, []).append(r)
+    region_groups = [(s, districts_by_state.get(s.id, [])) for s in states]
+
+    if "selected_region_id" not in ctx:
+        account = current_user()
+        ctx["selected_region_id"] = getattr(account, "region_id", None) if account is not None else None
+    return render_template("citizen/report_flow.html", region_groups=region_groups, **ctx)
+
+
+@citizen_bp.route("/report/analyze-photo", methods=["POST"])
+@limiter.limit("20 per minute")
+def analyze_report_photo():
+    """
+    Photo → auto description (AreaPulse /ai/analyze-image). Groq vision reads
+    the photo and returns a one-line description the citizen can edit before
+    submitting. The photo is not stored here — it's re-sent with the form.
+    """
+    import base64
+    photo = request.files.get("photo")
+    if not photo or not (photo.mimetype or "").startswith("image/"):
+        return jsonify({"error": "Please choose an image."}), 400
+    data = photo.read()
+    if not data or len(data) > 10 * 1024 * 1024:
+        return jsonify({"error": "Image is empty or larger than 10 MB."}), 400
+
+    from app.services.report_verification import analyze_image
+    result = analyze_image(base64.b64encode(data).decode("ascii"), photo.mimetype)
+    if "error" in result:
+        logger.warning("Photo analysis failed: %s", str(result.get("error"))[:200])
+        return jsonify({"error": "Couldn't read the photo right now — please describe it yourself."}), 503
+
+    reason = (result.get("false_report_reason") or "").lower()
+    if not result.get("is_civic_issue", True) and ("ai-generated" in reason or "non-photographic" in reason):
+        return jsonify({"ai_image": True}), 200
+    return jsonify({
+        "description": (result.get("description") or "").strip(),
+        "is_civic_issue": bool(result.get("is_civic_issue", True)),
+    })
 
 
 # ---------------------------------------------------------------------------

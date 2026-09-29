@@ -37,7 +37,9 @@ _MODEL_TEXT = _MODEL
 try:
     from groq import Groq
     if os.environ.get('GROQ_API_KEY'):
-        _client = Groq(api_key=os.environ['GROQ_API_KEY'])
+        # NEVO: bounded — a slow Groq queue (seen: 27 s for a 95-token reply)
+        # must not hang a citizen's submission; on timeout each check fails open.
+        _client = Groq(api_key=os.environ['GROQ_API_KEY'], timeout=20.0, max_retries=1)
         print(f'[report_verification] Groq OK  model={_MODEL}')
 except Exception as e:
     print(f'[report_verification] Groq unavailable: {e}')
@@ -825,8 +827,12 @@ def detect_ai_image(image_b64: str, mime: str = 'image/jpeg', filename: str = ''
     # Catches diffusion model images regardless of which generator made them.
     ela = _check_ela(image_b64)
     print(f'[ai_engine] ELA: {ela.get("signals", ["?"])[0] if ela.get("signals") else "no result"}')
-    if ela['is_ai_generated'] and ela['confidence'] >= 75:
-        return ela   # Strong ELA signal — AI-generated
+    # NEVO: ELA never blocks on its own. Any re-compressed real photo
+    # (WhatsApp-forwarded, browser-resized, web copy) is just as "smooth" —
+    # a real pothole photo scored 82% vs ~84% for AreaPulse's ChatGPT sample.
+    # It only falls through to Sightengine / Groq vision, which decide.
+    if ela['is_ai_generated']:
+        print(f'[ai_engine] ELA flagged ({ela["confidence"]}%) -> deferring to Sightengine/Groq')
 
     # ── Layer 2: Sightengine (purpose-built AI detector, most accurate) ─────────
     if _sightengine_ok:

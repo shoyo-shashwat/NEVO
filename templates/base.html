@@ -237,6 +237,24 @@
 {% endif %}
 
 <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+<script>
+// Shared base map for every Leaflet map: MapTiler (MAPTILER_KEY /
+// MAPTILER_STYLE in config), falling back to OpenStreetMap without a key.
+window.nevoTileLayer = function () {
+  var key = {{ config.MAPTILER_KEY | tojson }};
+  var style = {{ config.MAPTILER_STYLE | tojson }};
+  if (key) {
+    var ext = /^satellite/.test(style) ? 'jpg' : 'png';
+    return L.tileLayer('https://api.maptiler.com/maps/' + style + '/256/{z}/{x}/{y}.' + ext + '?key=' + key, {
+      maxZoom: 20, crossOrigin: true,
+      attribution: '&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+  }
+  return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+  });
+};
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
