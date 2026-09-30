@@ -31,6 +31,9 @@ app/static/uploads/
 .DS_Store
 Thumbs.db
 
+# Stray root-level screenshots dropped during dev
+/image.png
+
 # IDE
 .vscode/
 .idea/
